@@ -74,3 +74,17 @@ X는 Tray 숨김, 명시적 종료는 hook/명령 큐/runtime/audio 정리 후 �
 Metronome 시작/정지/재시작 상태 변경 및 실행 중 명시적 종료 후 프로세스 제거 확인.
 실제 청각 및 물리 키 전역 단축키/Tray 메뉴 클릭은 사용자 검증 필요.
 UIA BPM set_value는 도구 오류로 실패하여 그 경로는 아직 검증하지 않았다.
+
+## 2026-09-15 WGC foundation
+
+WGC CreateFreeThreaded + D3D11 device interop + SoftwareBitmap CPU 복사 구현.
+RF4 HWND/PID 탐색, Steam 스트리밍 창 구분, 최소화/창 종료/5초 프레임 중단 처리,
+크기 변경 시 pool 재생성, 실패 시 장치/세션 정리 후 2초 재연결을 구현했다.
+App/Infrastructure target은 Windows 10.0.19041 API로 지정했다.
+진단 UI: 연결 상태, frame dimensions/count, 사용자가 요청할 때만 PNG 저장.
+검증: dotnet build 경고/오류 0. dotnet test 총 17개(순수 14 + Windows 통합 3) 통과.
+Windows 통합 테스트가 실제 WPF 테스트 창의 파란 픽셀을 캡처하고,
+빨간 창으로 가린 상태에서 resize된 프레임도 파란색인지 확인했다. 창 종료 예외,
+hook 시작/중복 정리, 음량 0의 실제 audio voice 생성/재생/정리도 통과했다.
+NEEDS_REAL_RF4_TEST: RF4 본체는 발견되지 않았으며 현재 Steam streaming_client만 존재한다.
+본체 게임 캡처/재실행/device loss 실물 재현은 아직 검증하지 않았다.

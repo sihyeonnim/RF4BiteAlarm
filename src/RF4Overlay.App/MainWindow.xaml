@@ -10,6 +10,7 @@
         <StackPanel Margin="0,0,0,16">
             <TextBlock Text="RF4 Overlay" FontSize="28" FontWeight="SemiBold"/>
             <TextBlock Text="{Binding ConnectionStatus}" Margin="0,8,0,0" Foreground="#CBD5E1"/>
+            <Button Content="캡처 진단 이미지 저장" Click="SnapshotClick" HorizontalAlignment="Left" Margin="0,6,0,0" Padding="8,3"/>
             <TextBlock Text="{Binding InputStatus}" Margin="0,4,0,0" Foreground="#CBD5E1"/>
         </StackPanel>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">

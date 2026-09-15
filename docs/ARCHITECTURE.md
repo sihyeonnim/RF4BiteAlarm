@@ -75,3 +75,16 @@ WH_KEYBOARD_LL/WH_MOUSE_LL의 injected flags를 사용하여 모든 synthetic �
 BPM은 monotonic Stopwatch의 목표 시각을 사용하고 장기 지연 시 박자를 건너뛴다.
 Tray는 Infrastructure의 WinForms NotifyIcon을 사용하며 WPF UI dispatcher에 상태를 반영한다.
 키 설정은 WPF PreviewKeyDown으로 실제 key/modifier를 기록한다. 기록 중에는 전역 실행을 중단한다.
+
+## WGC 구현 결정
+
+App/Infrastructure는 net10.0-windows10.0.19041.0이며 Core/Features는 순수 net10.0이다.
+캡처 iterator 한 개가 device, frame pool, session, 프레임을 소유한다. Dispose는 취소 후 iterator
+정리를 기다린다. frame pool은 CreateFreeThreaded를 사용하므로 UI 메시지 루프에 의존하지 않는다.
+SoftwareBitmap으로 BGRA8 CPU 복사본을 만들며 약 30fps까지 polling한다. 최신 프레임만 유지한다.
+HDR 정밀 감지는 아직 대상이 아니다. 오류를 UI 소멸로 바꾸지 않는다.
+모니터는 모든 실패에서 세션/장치를 폐기하고 창을 다시 탐색하여 재연결한다.
+진단 PNG는 LocalApplicationData/RF4Overlay/diagnostics에 수동 저장하며 리포지터리에 넣지 않는다.
+공식 참조: https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture
+및 https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded
+(확인 2026-09-15).

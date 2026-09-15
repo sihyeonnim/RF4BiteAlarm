@@ -10,6 +10,10 @@ using RF4Overlay.Infrastructure.Audio;
 using RF4Overlay.Infrastructure.Input;
 using RF4Overlay.Infrastructure.Settings;
 using RF4Overlay.Infrastructure.Tray;
+using RF4Overlay.Infrastructure.Capture;
+using System.IO;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace RF4Overlay.App;
 
@@ -19,6 +23,7 @@ public partial class MainWindow : Window
     private readonly WindowsInputMonitor _input = new();
     private readonly GlobalHotkeyService _hotkeys;
     private readonly SettingsStore _store = new();
+    private readonly CaptureMonitor _capture = new(new GameWindowLocator());
     private readonly MainViewModel _viewModel;
     private TrayService? _tray;
     private bool _exiting;
@@ -38,6 +43,8 @@ public partial class MainWindow : Window
         _hotkeys = new(_input, _runtime);
         _viewModel = new(_runtime, settings, saved.Hotkeys, bindings => _hotkeys.SetBindings(bindings), PersistSettings);
         DataContext = _viewModel;
+        _capture.StatusChanged += (_, status) => Dispatcher.BeginInvoke(() =>
+            _viewModel.ConnectionStatus = status.Message + (status.FrameCount > 0 ? $" · {status.Width}×{status.Height} · {status.FrameCount} frames" : ""));
         _viewModel.Notice = warning ?? "단축키를 누르면 게임에도 같은 키가 전달됩니다.";
         _hotkeys.Error += (_, message) => Dispatcher.BeginInvoke(() => _viewModel.Notice = message);
         _viewModel.RecordingChanged += (_, _) => _hotkeys.Suspended = _viewModel.IsRecording;
@@ -72,6 +79,7 @@ public partial class MainWindow : Window
         catch (Exception error) { _viewModel.Notice = "Tray를 만들지 못했습니다: " + error.Message; }
         try { await _input.StartAsync(); _viewModel.InputStatus = "전역 입력 관찰 중 · injected 입력 제외"; }
         catch (Exception error) { _viewModel.InputStatus = "단축키 사용 불가: " + error.Message; }
+        _capture.Start();
     }
     private void PersistSettings(UserSettings settings)
     {
@@ -80,6 +88,22 @@ public partial class MainWindow : Window
     }
     private void ShowMain() { Show(); WindowState = WindowState.Normal; Activate(); }
     private void ExitClick(object sender, RoutedEventArgs e) => _ = ExitAsync();
+    private void SnapshotClick(object sender, RoutedEventArgs e)
+    {
+        var frame = _capture.LatestFrame;
+        if (frame is null) { _viewModel.Notice = "저장할 캡처 프레임이 없습니다."; return; }
+        try
+        {
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RF4Overlay", "diagnostics");
+            Directory.CreateDirectory(directory);
+            var path = Path.Combine(directory, "capture-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".png");
+            var bitmap = BitmapSource.Create(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null, frame.Pixels.ToArray(), frame.Stride);
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var stream = File.Create(path); encoder.Save(stream);
+            _viewModel.Notice = "진단 이미지 저장: " + path;
+        }
+        catch (Exception error) { _viewModel.Notice = "진단 저장 실패: " + error.Message; }
+    }
     private Task ExitAsync() => _exitTask ??= ExitCoreAsync();
     private async Task ExitCoreAsync()
     {
@@ -90,6 +114,7 @@ public partial class MainWindow : Window
         try
         {
             await _input.DisposeAsync();
+            await _capture.DisposeAsync();
             await _hotkeys.DisposeAsync();
             await _runtime.DisposeAsync();
             _tray?.Dispose();

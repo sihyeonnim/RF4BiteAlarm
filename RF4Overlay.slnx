@@ -7,5 +7,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/RF4Overlay.Tests/RF4Overlay.Tests.csproj" />
+    <Project Path="tests/RF4Overlay.WindowsTests/RF4Overlay.WindowsTests.csproj" />
   </Folder>
 </Solution>
