@@ -1,4 +1,4 @@
-using RF4Overlay.Core.Features;
+﻿using RF4Overlay.Core.Features;
 
 namespace RF4Overlay.Core.Input;
 
@@ -18,7 +18,8 @@ public sealed class HotkeyBinding
     public HotkeyBinding(IEnumerable<KeyStroke> sequence, TimeSpan maximumGap, FeatureCommand command)
     {
         var strokes = sequence.ToArray();
-        if (strokes.Length == 0 || strokes.Any(stroke => stroke.VirtualKey == 0))
+        if (strokes.Length == 0 || strokes.Any(stroke => stroke.VirtualKey is 0 or 255 || InputPolicy.IsModifier(stroke.VirtualKey) ||
+            (stroke.Modifiers & ~(KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Shift | KeyModifiers.Windows)) != 0))
             throw new ArgumentException("At least one valid key is required.", nameof(sequence));
         if (maximumGap <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(maximumGap));
@@ -28,11 +29,11 @@ public sealed class HotkeyBinding
     }
 }
 
-public interface IGlobalHotkeyService : IDisposable
+public interface IGlobalHotkeyService : IAsyncDisposable
 {
     // Implementations route recognized bindings through FeatureCommandDispatcher.
-    void Start(IReadOnlyList<HotkeyBinding> bindings);
-    void Stop();
+    void SetBindings(IEnumerable<HotkeyBinding> bindings);
+    bool Suspended { get; set; }
 }
 
 public sealed record UserInput(DateTimeOffset Timestamp);

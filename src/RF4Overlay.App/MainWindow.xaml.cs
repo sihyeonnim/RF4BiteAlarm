@@ -1,27 +1,107 @@
 ﻿using System.Windows;
+using System.Windows.Input;
 using RF4Overlay.App.ViewModels;
 using RF4Overlay.Core.Features;
+using RF4Overlay.Core.Input;
+using RF4Overlay.Core.Settings;
 using RF4Overlay.Features;
+using RF4Overlay.Features.Metronome;
+using RF4Overlay.Infrastructure.Audio;
+using RF4Overlay.Infrastructure.Input;
+using RF4Overlay.Infrastructure.Settings;
+using RF4Overlay.Infrastructure.Tray;
 
 namespace RF4Overlay.App;
 
 public partial class MainWindow : Window
 {
-    private readonly FeatureCommandDispatcher _runtime = new(FeatureCatalog.Create());
-    private bool _closing;
+    private readonly FeatureCommandDispatcher _runtime;
+    private readonly WindowsInputMonitor _input = new();
+    private readonly GlobalHotkeyService _hotkeys;
+    private readonly SettingsStore _store = new();
+    private readonly MainViewModel _viewModel;
+    private TrayService? _tray;
+    private bool _exiting;
+    private Task? _exitTask;
     public MainWindow()
     {
         InitializeComponent();
-        DataContext = new MainViewModel(_runtime);
-        Closing += async (_, e) =>
+        MinHeight = Math.Min(MinHeight, SystemParameters.WorkArea.Height);
+        Height = Math.Min(Height, SystemParameters.WorkArea.Height);
+        Top = SystemParameters.WorkArea.Top;
+        UserSettings saved;
+        string? warning = null;
+        try { saved = _store.Load(); }
+        catch (Exception error) { saved = UserSettings.Default; warning = "설정을 읽지 못해 기본값을 사용합니다: " + error.Message; }
+        var settings = new MetronomeSettings { Bpm = saved.Bpm, Volume = saved.Volume };
+        _runtime = new(FeatureCatalog.Create(new AudioService(), settings));
+        _hotkeys = new(_input, _runtime);
+        _viewModel = new(_runtime, settings, saved.Hotkeys, bindings => _hotkeys.SetBindings(bindings), PersistSettings);
+        DataContext = _viewModel;
+        _viewModel.Notice = warning ?? "단축키를 누르면 게임에도 같은 키가 전달됩니다.";
+        _hotkeys.Error += (_, message) => Dispatcher.BeginInvoke(() => _viewModel.Notice = message);
+        _viewModel.RecordingChanged += (_, _) => _hotkeys.Suspended = _viewModel.IsRecording;
+        Loaded += OnLoaded;
+        Closing += (_, e) =>
         {
-            if (_closing) return;
+            if (_exiting) return;
             e.Cancel = true;
-            IsEnabled = false;
-            await _runtime.DisposeAsync();
-            ((MainViewModel)DataContext).Dispose();
-            _closing = true;
-            Close();
+            _viewModel.CancelRecording();
+            if (_tray is null) _ = ExitAsync();
+            else Hide();
         };
+        PreviewKeyDown += (_, e) =>
+        {
+            if (!_viewModel.IsRecording || e.IsRepeat) return;
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            var vk = (byte)KeyInterop.VirtualKeyFromKey(key);
+            if (InputPolicy.IsModifier(vk)) return;
+            var modifiers = KeyModifiers.None;
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) modifiers |= KeyModifiers.Control;
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)) modifiers |= KeyModifiers.Shift;
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Alt)) modifiers |= KeyModifiers.Alt;
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Windows)) modifiers |= KeyModifiers.Windows;
+            _viewModel.RecordStroke(new(vk, modifiers));
+            e.Handled = true;
+        };
+    }
+    private async void OnLoaded(object sender, RoutedEventArgs args)
+    {
+        Loaded -= OnLoaded;
+        try { _tray = new(_runtime, action => Dispatcher.BeginInvoke(action), ShowMain, () => _ = ExitAsync()); }
+        catch (Exception error) { _viewModel.Notice = "Tray를 만들지 못했습니다: " + error.Message; }
+        try { await _input.StartAsync(); _viewModel.InputStatus = "전역 입력 관찰 중 · injected 입력 제외"; }
+        catch (Exception error) { _viewModel.InputStatus = "단축키 사용 불가: " + error.Message; }
+    }
+    private void PersistSettings(UserSettings settings)
+    {
+        try { _store.Save(settings); }
+        catch (Exception error) { _viewModel.Notice = "설정 저장 실패: " + error.Message; }
+    }
+    private void ShowMain() { Show(); WindowState = WindowState.Normal; Activate(); }
+    private void ExitClick(object sender, RoutedEventArgs e) => _ = ExitAsync();
+    private Task ExitAsync() => _exitTask ??= ExitCoreAsync();
+    private async Task ExitCoreAsync()
+    {
+        IsEnabled = false;
+        _viewModel.CancelRecording();
+        _viewModel.SaveSettings();
+        // Stop sources first, then wait for runtime cleanup before process shutdown.
+        try
+        {
+            await _input.DisposeAsync();
+            await _hotkeys.DisposeAsync();
+            await _runtime.DisposeAsync();
+            _tray?.Dispose();
+            _viewModel.Dispose();
+            _exiting = true;
+            Application.Current.Shutdown();
+        }
+        catch (Exception error)
+        {
+            _viewModel.Notice = "종료 정리 실패: " + error.Message;
+            IsEnabled = true;
+            _exitTask = null;
+        }
     }
 }

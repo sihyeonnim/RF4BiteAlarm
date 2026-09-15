@@ -1,4 +1,4 @@
-using RF4Overlay.Core.Features;
+﻿using RF4Overlay.Core.Features;
 
 namespace RF4Overlay.Features.BiteAlarm;
 

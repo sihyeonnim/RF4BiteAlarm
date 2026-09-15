@@ -62,3 +62,15 @@ worker가 injected 입력을 제외하고 사용자 활동과 key down/up을 전
 순수 matcher는 반복 억제, 정확한 modifier, 최대 key 간격, 반복/혼합 sequence를 지원한다.
 중복/prefix 설정은 거절한다. match 후 history를 소비하고 비-prefix 겹침은 가장 긴 suffix 우선이다.
 검증: build 경고/오류 0, test 10개 통과. 실제 hook/UI 연결은 다음 작업에서 검증한다.
+
+## 2026-09-15 Audio / Metronome / Tray
+
+공통 AudioService(NAudio 2.2.1), Feature별 voice 및 one-shot tick/alarm, volume/stop을 구현했다.
+Metronome은 BPM 20–300, 누적 drift를 줄이는 목표 시각 스케줄 및 지연 박자 건너뛰기를 사용한다.
+WPF 버튼/Tray/Hotkey는 같은 runtime 명령을 호출한다. 실제 키 기록으로 최대 8-key sequence를
+등록할 수 있고 설정은 LocalApplicationData/RF4Overlay/settings.json에 저장한다.
+X는 Tray 숨김, 명시적 종료는 hook/명령 큐/runtime/audio 정리 후 종료다.
+검증: build 경고/오류 0, test 14개 통과. computer-use로 입력 모니터 초기화,
+Metronome 시작/정지/재시작 상태 변경 및 실행 중 명시적 종료 후 프로세스 제거 확인.
+실제 청각 및 물리 키 전역 단축키/Tray 메뉴 클릭은 사용자 검증 필요.
+UIA BPM set_value는 도구 오류로 실패하여 그 경로는 아직 검증하지 않았다.

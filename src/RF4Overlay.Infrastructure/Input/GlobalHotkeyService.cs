@@ -4,7 +4,7 @@ using RF4Overlay.Core.Input;
 
 namespace RF4Overlay.Infrastructure.Input;
 
-public sealed class GlobalHotkeyService : IAsyncDisposable
+public sealed class GlobalHotkeyService : IGlobalHotkeyService
 {
     private readonly WindowsInputMonitor _monitor;
     private readonly FeatureCommandDispatcher _runtime;
@@ -13,7 +13,8 @@ public sealed class GlobalHotkeyService : IAsyncDisposable
     private readonly Task _consumer;
     private int _disposed;
     public event EventHandler<string>? Error;
-    public bool Suspended { get; set; }
+    private volatile bool _suspended;
+    public bool Suspended { get => _suspended; set { _suspended = value; _matcher.Reset(); } }
     public GlobalHotkeyService(WindowsInputMonitor monitor, FeatureCommandDispatcher runtime)
     {
         _monitor = monitor; _runtime = runtime;

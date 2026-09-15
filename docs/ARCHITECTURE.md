@@ -67,3 +67,11 @@ WH_KEYBOARD_LL/WH_MOUSE_LL의 injected flags를 사용하여 모든 synthetic �
 공식 참조: https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc
 및 https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-kbdllhookstruct
 (확인 2026-09-15). Hook timeout에 따른 OS의 조용한 해제는 플랫폼 제약이다.
+
+## Audio / UI 구현 결정
+
+오디오는 NAudio 2.2.1의 WaveOutEvent를 사용하며 각 Feature의 실행 수명에 voice를 소유한다.
+침묵을 반환하는 sample provider에 일회성 파형을 공급한다. 재생 실패는 runtime Faulted로 전달된다.
+BPM은 monotonic Stopwatch의 목표 시각을 사용하고 장기 지연 시 박자를 건너뛴다.
+Tray는 Infrastructure의 WinForms NotifyIcon을 사용하며 WPF UI dispatcher에 상태를 반영한다.
+키 설정은 WPF PreviewKeyDown으로 실제 key/modifier를 기록한다. 기록 중에는 전역 실행을 중단한다.

@@ -1,4 +1,4 @@
-namespace RF4Overlay.Core.Capture;
+﻿namespace RF4Overlay.Core.Capture;
 
 /// <summary>Owned CPU copy of a BGRA8 frame; coordinates are relative to this frame.</summary>
 public sealed record CapturedFrame(int Width, int Height, int Stride, ReadOnlyMemory<byte> Pixels);
