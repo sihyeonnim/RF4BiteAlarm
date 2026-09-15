@@ -1,0 +1,47 @@
+# 현재 상태
+
+최종 갱신: 2026-09-15 (Asia/Seoul)
+
+## 완료된 Phase
+
+**Phase 1 — 개발환경 및 기본 모듈 구조 완료**
+
+- 기존 리포지터리는 .git만 있었고 커밋은 없었음.
+- 기존 .NET SDK 10.0.401, Git 2.53.0, WindowsDesktop runtime/targeting pack 확인.
+- RF4Overlay.slnx 및 App/Core/Infrastructure/Features/Tests 5개 프로젝트 생성.
+- 공통 Start/Stop/Toggle dispatcher 및 독립 Feature 등록.
+- 캡처/알람/사용자 입력/입력 자동화/Global Hotkey 계약 정의.
+- 단일 키·modifier·반복 key sequence 표현 및 유효성 검사.
+- WPF 기본 화면: 3개 Feature 상태와 준비 중 버튼 표시.
+- 빌드 결과물 제외, SDK 고정, nullable 및 경고 오류 처리 설정.
+
+## 검증
+
+- `dotnet build`: 성공, 경고 0 / 오류 0.
+- `dotnet test`: 전체 8개 통과, 실패 0 / 건너뜀 0.
+- 실제 실행 파일을 computer-use로 실행: 창 제목, 3개 Feature 문구,
+  비활성 버튼을 스크린샷 및 접근성 트리에서 확인.
+- 창 닫기 버튼으로 종료 후 창 목록에서 제거된 것 확인.
+- 실제 게임 감지/소리/Hotkey/자동 입력 검증은 아직 대상이 아님.
+
+## 다음 작업
+
+1. Feature 비동기 수명, 상태 변경 알림, 명령 직렬화 및 오류 표시.
+2. Infrastructure 입력 관찰과 Hotkey sequence 매칭, Tray 명령 연결.
+3. Metronome 및 소리 서비스 구현 후 실행/정지 검증.
+4. WGC 캡처를 별도로 검증한 뒤 실제 UI 자료를 받아 Bite Alarm 구현.
+
+## 알려진 제약 및 문제
+
+- 현재 3개 Feature는 모두 명시적인 미구현 placeholder이며 실행 불가.
+- Infrastructure는 프로젝트 경계만 존재하며 Windows API 구현은 없음.
+- Hotkey는 표현 계약만 있음. 시간/반복/충돌 매칭 엔진 및 Tray는 미구현.
+- Bite Alarm 상태 머신, 반복 알람, 사용자 입력 서비스도 미구현.
+- 실제 입질 이미지/해상도/좌표 미제공. 임의 좌표나 감지 임계값을 넣지 않았음.
+- Auto Pilking 운영정책은 실제 구현 전에 확인할 예정.
+- 샌드박스 NuGet 접속 실패는 승인된 `dotnet restore`로 해결함.
+- 샌드박스 기본 빌드는 오류 상세 없이 실패했고 단일 노드 진단에서
+  컴파일러 named pipe UnauthorizedAccessException 확인. 승인된 환경의 빌드는 정상.
+  단일 노드 진단 빌드도 fallback 후 성공함. 프로젝트 설정으로 보안 제한을 우회하지 않음.
+- 샌드박스 `dotnet test`는 출력 없이 지연되어 중단을 요청했으며,
+  승인된 환경에서 `dotnet test`를 실행해 8개 통과 확인.

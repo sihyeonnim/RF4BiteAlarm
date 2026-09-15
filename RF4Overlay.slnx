@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RF4Overlay.App/RF4Overlay.App.csproj" />
+    <Project Path="src/RF4Overlay.Core/RF4Overlay.Core.csproj" />
+    <Project Path="src/RF4Overlay.Features/RF4Overlay.Features.csproj" />
+    <Project Path="src/RF4Overlay.Infrastructure/RF4Overlay.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RF4Overlay.Tests/RF4Overlay.Tests.csproj" />
+  </Folder>
+</Solution>

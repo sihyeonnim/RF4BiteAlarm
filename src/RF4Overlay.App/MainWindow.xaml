@@ -1,0 +1,41 @@
+﻿<Window x:Class="RF4Overlay.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="RF4 Overlay" Width="820" Height="580" MinWidth="640" MinHeight="480"
+        Background="#111827" Foreground="#F3F4F6" FontFamily="Segoe UI">
+    <Grid Margin="28">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,24">
+            <TextBlock Text="RF4 Overlay" FontSize="30" FontWeight="SemiBold"/>
+            <TextBlock Text="RF4 보조 플랫폼 · Phase 1 / 기본 구조" Margin="0,8,0,0" Foreground="#CBD5E1"/>
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Features}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="#1F2937" CornerRadius="8" Padding="18" Margin="0,0,0,12">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="100"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,16,0">
+                                    <TextBlock Text="{Binding Name}" FontSize="19" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding Description}" Foreground="#CBD5E1" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="준비 중" Height="36"
+                                        Command="{Binding ToggleCommand}" AutomationProperties.Name="{Binding Name}"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+        <TextBlock Grid.Row="2" Text="현재는 기본 셸입니다. 게임 캡처, 알람, 전역 단축키 및 자동 입력은 아직 작동하지 않습니다."
+                   TextWrapping="Wrap" Foreground="#94A3B8" Margin="0,12,0,0"/>
+    </Grid>
+</Window>
