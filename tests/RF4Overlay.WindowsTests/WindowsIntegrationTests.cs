@@ -7,6 +7,9 @@ using RF4Overlay.Core.Capture;
 using RF4Overlay.Infrastructure.Audio;
 using RF4Overlay.Infrastructure.Capture;
 using RF4Overlay.Infrastructure.Input;
+using RF4Overlay.Infrastructure.Settings;
+using RF4Overlay.Core.Settings;
+using System.IO;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 namespace RF4Overlay.WindowsTests;
@@ -77,6 +80,43 @@ public sealed class WindowsIntegrationTests
         var offset = frame.Stride * (frame.Height / 2) + frame.Width / 2 * 4;
         var bytes = frame.Pixels.Span;
         Assert.True(bytes[offset] > 180 && bytes[offset + 2] < 60, $"Expected blue target, got B={bytes[offset]} R={bytes[offset + 2]}");
+    }
+
+    [Fact]
+    public async Task SettingsWritesFinishAtShutdownAndKeepLatestValue()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "RF4Overlay-test-" + Guid.NewGuid());
+        var path = Path.Combine(directory, "settings.json");
+        try
+        {
+            await using (var store = new SettingsStore(path))
+            {
+                Assert.Equal(120, store.Load().Bpm);
+                for (var bpm = 120; bpm <= 180; bpm++) store.Save(UserSettings.Default with { Bpm = bpm });
+            }
+            await using var loaded = new SettingsStore(path);
+            Assert.Equal(180, loaded.Load().Bpm);
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+    }
+
+    [Fact]
+    public async Task CaptureMonitorDoesNotTrustStreamingTitleAndDisposesTwice()
+    {
+        var monitor = new CaptureMonitor(new StreamingLocator());
+        var reported = new TaskCompletionSource<CaptureStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+        monitor.StatusChanged += (_, status) => reported.TrySetResult(status);
+        monitor.Start();
+        Assert.Contains("제목만", (await reported.Task.WaitAsync(TimeSpan.FromSeconds(5))).Message);
+        Assert.Null(monitor.LatestFrame);
+        await Task.WhenAll(monitor.DisposeAsync().AsTask(), monitor.DisposeAsync().AsTask());
+        Assert.Throws<ObjectDisposedException>(() => monitor.Start());
+    }
+
+    private sealed class StreamingLocator : IGameWindowLocator
+    {
+        public IReadOnlyList<CaptureWindow> FindWindows() => [new(123, 1, "streaming_client", "Russian Fishing 4 [Streaming]", 1920, 1080, true)];
+        public bool IsCurrent(CaptureWindow window) => true;
     }
 
     private static Task OnDesktop(Func<Task> action)

@@ -1,98 +1,114 @@
-# 구조와 개발 계획
+﻿# RF4 Overlay 구조
 
-## 의존성
+## 프로젝트 경계
 
 App → Features → Core, App → Infrastructure → Core, App → Core.
-Core/Features는 net10.0, App/Infrastructure는 net10.0-windows를 사용합니다.
-Feature는 한 프로젝트 안의 별도 namespace/폴더로 분리하고 서로 참조하지 않습니다.
-현재 규모에서는 Feature마다 별도 어셈블리나 플러그인 로더를 만들지 않습니다.
 
-## 명령과 수명
+Core/Features는 net10.0, App/Infrastructure는 net10.0-windows10.0.19041.0이다.
+Feature들은 한 어셈블리 안의 독립 namespace/폴더이며 서로 참조하지 않는다.
+규모에 맞게 별도 plugin loader, DI framework, Feature별 assembly는 도입하지 않았다.
+WindowsTests는 실제 Windows API를 사용하며 순수 Tests와 분리한다.
 
-UI 버튼은 ICommand 어댑터를 통해 FeatureCommandDispatcher로 전달됩니다.
-향후 Tray/Global Hotkey도 동일한 Start/Stop/Toggle 명령을 전달합니다.
-현재 Feature는 모두 Unavailable이며 호출 시 실패 결과를 반환합니다.
-실제 서비스 구현 단계에 비동기 수명, 중복 실행 방지, 오류 결과 표시, UI 상태 변경 알림,
-종료 시 취소/자원 해제를 추가합니다. 현재 dispatcher는 동기식이며 스레드 직렬화를 제공하지 않습니다.
+## Feature runtime
 
-## Global Hotkey
+동기 Execute 계약으로는 장기 실행/취소를 표현할 수 없어 IFeature.RunAsync로 변경했다.
+Runtime이 Feature별 semaphore, 실행 Task, CancellationTokenSource, 불변 상태 snapshot을 소유한다.
 
-HotkeyBinding은 virtual key + modifier의 순서와 최대 키 간격을 표현합니다.
-단일 키, 조합 키, NumPad1 세 번 같은 반복을 같은 모델로 표현할 수 있습니다.
-현재 등록/관찰/매칭 엔진은 미구현이며 기본 단축키도 등록하지 않습니다.
-다음 단계에 실제 key-down/up 기반 반복 억제, 시간 초과, prefix 충돌 처리,
-포커스 독립성, injected 입력 제외, 해제 및 명령 라우팅을 구현하고 테스트합니다.
-명령 호출은 하나의 실행 문맥으로 직렬화합니다.
+- 같은 Feature 명령은 직렬화, 다른 Feature 실행은 독립.
+- 명령 토큰은 명령 대기/실행 전 취소에 사용. 시작된 실행은 Stop 또는 shutdown이 취소.
+- 중복 Start/Stop 안전 처리. Toggle은 활성 실행 유무를 기준으로 결정.
+- Faulted를 UI에 전달하고 개별 실패/상태 구독자의 예외를 격리.
+- 실행 최종 결과를 보관하여 완료와 Stop 경합에서 오류/종료 상태가 사라지지 않도록 처리.
+- shutdown은 새 명령을 거절하고 모든 실행의 finally 정리를 기다림.
+- WPF, Tray, Hotkey 모두 같은 FeatureCommandDispatcher.ExecuteAsync 사용.
+- WPF ViewModel은 dispatcher에 상태 변경을 전달받으며 Windows API를 직접 호출하지 않음.
 
-## Bite Alarm (계획)
+## Global Hotkey / Player Activity
 
-- Infrastructure의 Windows Graphics Capture 서비스가 선택한 RF4 창 프레임을 확보합니다.
-- 가려진 창에서도 동작하는 것이 목표이며 최소화/창 종료/장치 손실은 별도 상태로 처리합니다.
-- 실제 UI 이미지, 해상도, 프레임 기준 상대 좌표를 받은 뒤 감지기를 구성합니다.
-- 상태: 비활성 → 감시 → 알람 중 → 입력 확인 후 UI 소멸 대기 → 감시.
-- 감지 시 즉시 소리를 재생하고 사용자 입력 전까지 설정 간격으로 반복합니다.
-- 입력 확인 후 같은 UI가 남아 있어도 재알람하지 않습니다. UI가 사라진 뒤 새 입질을 허용합니다.
-- 캡처 실패는 UI 소멸로 간주하지 않습니다. 안정된 UI 소멸 판정과 취소 경합을 테스트합니다.
-- 사용자 입력 감지와 프로그램의 injected 입력은 구분합니다.
+전용 메시지 루프 thread에서 WH_KEYBOARD_LL / WH_MOUSE_LL을 관찰한다.
+Hook callback은 bounded queue에 넣고 즉시 반환하며 입력은 원래 앱에 전달한다.
+Worker가 injected flags를 제외하고 실제 사용자 활동과 key event를 전달한다.
+GetLastInputInfo는 출처를 구분할 수 없어 사용하지 않는다.
+
+Pure HotkeyMatcher는 down/up, 눌린 키 집합, 정확한 modifier, 시간 순서와 최대 간격을 처리한다.
+OS auto-repeat은 눌린 키 집합으로 제외한다. 입력 queue 포화 시 matcher를 reset한다.
+
+설정 정책:
+
+- 동일/prefix sequence는 등록 거절. A A와 A A A를 동시에 등록할 수 없음.
+- 비-prefix suffix가 겹쳐 같은 시각에 완성되면 가장 긴 매칭을 선택.
+- 매칭 시 history를 소비하여 같은 입력에서 중복 실행하지 않음.
+- Hook 관찰 → matcher → bounded 명령 queue → 공통 runtime.
+- 실제 키 기록 UI에서는 전역 명령을 일시 중단하고 최대 8개 키를 기록.
+- 입력 내용은 디스크/네트워크에 기록하지 않음. 저장되는 것은 사용자가 지정한 binding뿐.
+- 사용자 입력 관찰과 IInputAutomation 계약은 분리. 자동 입력 구현 없음.
+
+공식 근거 (2026-09-15 확인):
+[LowLevelKeyboardProc](https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc),
+[KBDLLHOOKSTRUCT](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-kbdllhookstruct),
+[MSLLHOOKSTRUCT](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-msllhookstruct).
+
+## Audio / Metronome
+
+NAudio 2.2.1의 WaveOutEvent와 작은 sample provider를 사용한다.
+IAudioService가 Feature 수명별 voice를 만들고 Play/Stop/Volume을 제공한다.
+침묵 사이에 감쇠 envelope의 tick/alarm 파형을 한 번 재생하며 자동 반복은 하지 않는다.
+반복 정책은 각 Feature에 있다. 장치 오류는 Feature runtime으로 전달한다.
+
+Metronome은 Stopwatch의 목표 시각을 누적한다. 지연 시 놓친 박자를 건너뛰며
+소리를 한꺼번에 재생하지 않는다. BPM/음량은 thread-safe 설정에서 다음 박자에 읽는다.
+
+## App / Tray / 저장
+
+App이 구현체를 조립한다. Tray는 Infrastructure의 WinForms NotifyIcon이다.
+창 X는 숨김, Tray 열기는 복원, 명시적 종료는 서비스 초기화를 기다린 뒤 정리한다.
+작은 화면은 작업 영역 높이에 맞추고 Feature 목록을 스크롤할 수 있다.
+
+설정은 LocalApplicationData/RF4Overlay/settings.json에 저장한다.
+단일 비동기 writer가 미처리 변경을 최신값으로 합치고 임시 파일을 원자적으로 교체한다.
+종료 시 최신 저장까지 기다린다. 손상된 설정은 UI 오류를 표시하고 기본값을 사용한다.
+수동 진단 PNG는 동일 사용자 경로의 diagnostics 하위에 저장하며 저장 작업은 UI 밖에서 실행한다.
+
+## Windows Graphics Capture
+
+RF4 본체 프로세스 이름과 HWND/PID로 창을 찾는다. 스트리밍 제목이 실제 게임과 다른 사례를
+확인했으므로 Steam streaming_client는 자동 연결 대상에서 제외한다.
+
+WgcWindowCapture의 iterator가 D3D11 device, WGC free-threaded pool/session과 각 frame을 소유한다.
+SoftwareBitmap으로 BGRA8 CPU 복사본을 만든다. 프레임은 dispose 후 pool을 재생성한다.
+CaptureMonitor는 최신 프레임 하나만 유지하고 연결 상태를 UI에 전달한다.
+
+- 크기 변경: pool.Recreate.
+- 창 종료/최소화/5초 무프레임/장치 오류: 자원 정리 후 2초 간격 재탐색 및 재연결.
+- Dispose: 취소 후 iterator 자원 해제 완료까지 대기.
+- 캡처 실패는 detector의 UI 소멸 신호로 변환하지 않음.
+- HDR 및 실제 RF4 전체화면 호환성은 실물 검증 대기.
+
+공식 근거 (2026-09-15 확인):
+[Screen capture](https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture),
+[CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded),
+[CreateForWindow](https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.capture.interop/nf-windows-graphics-capture-interop-igraphicscaptureiteminterop-createforwindow).
+
+## Bite Alarm
+
+제품 Feature는 실제 자료 대기로 Unavailable이며 임의 영상 detector는 없다.
+IBiteDetector와 BiteAlarmSession을 통한 fake 기반 테스트는 가능하다.
+
+상태: Inactive → Monitoring → Alerting → WaitingForDisappearance → Monitoring.
+
+- Present 최초 감지 즉시 1회, 이후 설정 간격 반복.
+- 사용자 활동 확인 시 반복/현재 소리 중단.
+- UI 소멸만으로 사용자가 확인한 것으로 취급하지 않음.
+- 확인 후 같은 UI가 남아 있으면 새 입질로 처리하지 않음.
+- 연속된 안정적 Absent 뒤에만 재무장. Present/CaptureFailed는 소멸 확인 근거를 초기화.
+- 세션은 관찰/타이머/입력 확인과 오디오를 직렬화하고 종료 시 구독/소리 정리.
+- 프레임 스트림 실패는 세션을 중단시키며 정상 소멸로 간주하지 않음.
+
+영상 자료 도착 후에만 실제 detector를 작성하고 catalog에 연결한다.
+현재 반복/소멸 확인 시간은 호출자가 제공하는 옵션이며 제품 기본값으로 확정하지 않았다.
 
 ## Auto Pilking
 
-현재는 기능 안내만 있습니다. 자동 입력 구현 및 정책 확인은 아직 수행하지 않았습니다.
-실제 구현 전에 최신 RF4 공식 정책의 자동화 허용 범위를 검토하여 출처와 확인일을 기록합니다.
-정책상 불허이면 해당 자동화는 구현하지 않습니다.
-
-## Phase
-
-1. 개발환경, 솔루션, 계약, WPF 셸, 테스트 — 완료.
-2. Feature 수명 및 상태 통지, 공통 Hotkey/Tray, Metronome 구현.
-3. WGC 창 캡처 및 오류 복구 검증.
-4. 실제 자료 기반 입질 감지, 상태 머신, 소리 및 입력 확인 통합.
-5. 공식 정책 검토 후 허용 범위에 한해 Auto Pilking 구현 여부 결정.
-
-## Runtime 구현 결정 (2026-09-15)
-
-기존 동기 Execute 계약은 장기 실행/취소를 표현할 수 없어 IFeature.RunAsync로 교체했다.
-FeatureCommandDispatcher가 Feature별 semaphore, 실행 Task, CancellationTokenSource를 소유한다.
-서로 다른 Feature는 병행 가능하며 같은 Feature의 명령은 직렬화된다.
-Shutdown은 새 명령을 거절하고 모든 실행의 finally 정리가 완료될 때까지 비동기로 기다린다.
-상태는 불변 snapshot으로 전달하고 개별 Feature 오류는 Faulted로 격리한다.
-
-## Hotkey 구현 결정
-
-GetLastInputInfo는 입력 출처를 구분하지 못하므로 사용하지 않는다.
-WH_KEYBOARD_LL/WH_MOUSE_LL의 injected flags를 사용하여 모든 synthetic 입력을 제외한다.
-전용 hook thread → bounded 입력 queue → matcher → bounded 명령 queue → 공통 runtime 경로다.
-입력 queue 포화 시 matcher를 reset한다. 키 내용은 디스크에 기록하지 않는다.
-앱 간 단축키 충돌은 감지할 수 없으며 입력은 원래 앱에도 전달된다.
-공식 참조: https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc
-및 https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-kbdllhookstruct
-(확인 2026-09-15). Hook timeout에 따른 OS의 조용한 해제는 플랫폼 제약이다.
-
-## Audio / UI 구현 결정
-
-오디오는 NAudio 2.2.1의 WaveOutEvent를 사용하며 각 Feature의 실행 수명에 voice를 소유한다.
-침묵을 반환하는 sample provider에 일회성 파형을 공급한다. 재생 실패는 runtime Faulted로 전달된다.
-BPM은 monotonic Stopwatch의 목표 시각을 사용하고 장기 지연 시 박자를 건너뛴다.
-Tray는 Infrastructure의 WinForms NotifyIcon을 사용하며 WPF UI dispatcher에 상태를 반영한다.
-키 설정은 WPF PreviewKeyDown으로 실제 key/modifier를 기록한다. 기록 중에는 전역 실행을 중단한다.
-
-## WGC 구현 결정
-
-App/Infrastructure는 net10.0-windows10.0.19041.0이며 Core/Features는 순수 net10.0이다.
-캡처 iterator 한 개가 device, frame pool, session, 프레임을 소유한다. Dispose는 취소 후 iterator
-정리를 기다린다. frame pool은 CreateFreeThreaded를 사용하므로 UI 메시지 루프에 의존하지 않는다.
-SoftwareBitmap으로 BGRA8 CPU 복사본을 만들며 약 30fps까지 polling한다. 최신 프레임만 유지한다.
-HDR 정밀 감지는 아직 대상이 아니다. 오류를 UI 소멸로 바꾸지 않는다.
-모니터는 모든 실패에서 세션/장치를 폐기하고 창을 다시 탐색하여 재연결한다.
-진단 PNG는 LocalApplicationData/RF4Overlay/diagnostics에 수동 저장하며 리포지터리에 넣지 않는다.
-공식 참조: https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture
-및 https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded
-(확인 2026-09-15).
-
-## Bite Alarm 준비 구현
-
-BiteStateMachine은 순수 입력/시각 기반이며 Windows API를 모른다. BiteAlarmSession은
-주어진 프레임 스트림과 IBiteDetector를 받아 오디오/입력 관찰을 연결한다.
-알람은 사용자 입력이 있어야 중단되며 UI 소멸만으로 acknowledge하지 않는다.
-WaitingForDisappearance에서 Present 또는 CaptureFailed가 소멸 확인 시간을 초기화한다.
-실제 시간 옵션은 호출자가 제공한다. detector와 게임별 이미지/좌표/threshold는 아직 없다.
+현재 구조와 안내만 유지한다. 실제 자동화 시작 전 RF4 최신 공식 정책의 허용 범위를 확인하고
+확인일/출처를 기록한다. 정책상 불허하거나 허용 여부가 확인되지 않으면 입력 자동화를 구현하지 않는다.
+탐지 회피나 자동화 은폐는 구현하지 않는다.

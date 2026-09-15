@@ -76,6 +76,104 @@ public sealed class FeatureCommandTests
         public Task RunAsync(CancellationToken token) => throw new InvalidOperationException("Audio failed");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompletionRacingStopCannotLeaveStoppingOrLoseFailure(bool fail)
+    {
+        var feature = new CompletingFeature(fail);
+        await using var runtime = new FeatureCommandDispatcher([feature]);
+        using var releaseObserver = new ManualResetEventSlim();
+        var terminalPublished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = 0;
+        runtime.StatusChanged += (_, status) =>
+        {
+            if (status.State is FeatureState.Stopped or FeatureState.Faulted && Interlocked.Increment(ref first) == 1)
+            {
+                terminalPublished.TrySetResult();
+                releaseObserver.Wait(TimeSpan.FromSeconds(5));
+            }
+        };
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start));
+        feature.Finish.TrySetResult();
+        await terminalPublished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var stop = runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Stop));
+        releaseObserver.Set();
+        await stop;
+        Assert.Equal(fail ? FeatureState.Faulted : FeatureState.Stopped, runtime.GetStatuses()[0].State);
+        if (fail) Assert.Equal("Run failed", runtime.GetStatuses()[0].Error);
+    }
+
+    private sealed class CompletingFeature(bool fail) : IFeature
+    {
+        public FeatureStatus InitialStatus => new(FeatureId.Metronome, "Test", FeatureState.Stopped, "");
+        public TaskCompletionSource Finish { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task RunAsync(CancellationToken token)
+        {
+            await Finish.Task;
+            if (fail) throw new IOException("Run failed");
+        }
+    }
+
+    [Fact]
+    public async Task CancellationCallbackFailureStillWaitsForFeatureCleanup()
+    {
+        var feature = new CallbackFailureFeature();
+        await using var runtime = new FeatureCommandDispatcher([feature]);
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start));
+        await feature.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.False((await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Stop))).Succeeded);
+        Assert.True(feature.Cleaned);
+        Assert.Equal(FeatureState.Faulted, runtime.GetStatuses()[0].State);
+    }
+
+    [Fact]
+    public async Task CancelQueuedStartWhileStopWaitsForCleanup()
+    {
+        var feature = new SlowCleanupFeature();
+        await using var runtime = new FeatureCommandDispatcher([feature]);
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start));
+        await feature.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var stop = runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Stop));
+        await feature.Cleaning.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using var cancel = new CancellationTokenSource();
+        var queued = runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start), cancel.Token);
+        await cancel.CancelAsync();
+        Assert.False((await queued.WaitAsync(TimeSpan.FromSeconds(5))).Succeeded);
+        Assert.False(stop.IsCompleted);
+        feature.Release.TrySetResult();
+        Assert.True((await stop).Succeeded);
+        Assert.Equal(FeatureState.Stopped, runtime.GetStatuses()[0].State);
+    }
+
+    private sealed class CallbackFailureFeature : IFeature
+    {
+        public FeatureStatus InitialStatus => new(FeatureId.Metronome, "Test", FeatureState.Stopped, "");
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Cleaned;
+        public async Task RunAsync(CancellationToken token)
+        {
+            using var registration = token.Register(() => throw new InvalidOperationException("Cancellation callback failed"));
+            Started.TrySetResult();
+            try { await Task.Delay(Timeout.Infinite, token); }
+            finally { Cleaned = true; }
+        }
+    }
+
+    private sealed class SlowCleanupFeature : IFeature
+    {
+        public FeatureStatus InitialStatus => new(FeatureId.Metronome, "Test", FeatureState.Stopped, "");
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Cleaning { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async Task RunAsync(CancellationToken token)
+        {
+            Started.TrySetResult();
+            try { await Task.Delay(Timeout.Infinite, token); }
+            finally { Cleaning.TrySetResult(); await Release.Task; }
+        }
+    }
+
     private sealed class TestFeature : IFeature
     {
         public FeatureStatus InitialStatus => new(FeatureId.Metronome, "Test", FeatureState.Stopped, "");

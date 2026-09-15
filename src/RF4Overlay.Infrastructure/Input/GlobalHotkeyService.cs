@@ -35,6 +35,7 @@ public sealed class GlobalHotkeyService : IGlobalHotkeyService
         await foreach (var command in _commands.Reader.ReadAllAsync())
         {
             if (Volatile.Read(ref _disposed) != 0) break;
+            if (Suspended) continue;
             var result = await _runtime.ExecuteAsync(command).ConfigureAwait(false);
             if (!result.Succeeded) Error?.Invoke(this, result.Message);
         }

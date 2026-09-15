@@ -28,6 +28,8 @@ public partial class MainWindow : Window
     private TrayService? _tray;
     private bool _exiting;
     private Task? _exitTask;
+    private Task _startupTask = Task.CompletedTask;
+    private Task<string>? _snapshotTask;
     public MainWindow()
     {
         InitializeComponent();
@@ -43,6 +45,7 @@ public partial class MainWindow : Window
         _hotkeys = new(_input, _runtime);
         _viewModel = new(_runtime, settings, saved.Hotkeys, bindings => _hotkeys.SetBindings(bindings), PersistSettings);
         DataContext = _viewModel;
+        _store.SaveFailed += (_, message) => Dispatcher.BeginInvoke(() => _viewModel.Notice = "설정 저장 실패: " + message);
         _capture.StatusChanged += (_, status) => Dispatcher.BeginInvoke(() =>
             _viewModel.ConnectionStatus = status.Message + (status.FrameCount > 0 ? $" · {status.Width}×{status.Height} · {status.FrameCount} frames" : ""));
         _viewModel.Notice = warning ?? "단축키를 누르면 게임에도 같은 키가 전달됩니다.";
@@ -72,9 +75,13 @@ public partial class MainWindow : Window
             e.Handled = true;
         };
     }
-    private async void OnLoaded(object sender, RoutedEventArgs args)
+    private void OnLoaded(object sender, RoutedEventArgs args)
     {
         Loaded -= OnLoaded;
+        _startupTask = InitializeServicesAsync();
+    }
+    private async Task InitializeServicesAsync()
+    {
         try { _tray = new(_runtime, action => Dispatcher.BeginInvoke(action), ShowMain, () => _ = ExitAsync()); }
         catch (Exception error) { _viewModel.Notice = "Tray를 만들지 못했습니다: " + error.Message; }
         try { await _input.StartAsync(); _viewModel.InputStatus = "전역 입력 관찰 중 · injected 입력 제외"; }
@@ -88,19 +95,24 @@ public partial class MainWindow : Window
     }
     private void ShowMain() { Show(); WindowState = WindowState.Normal; Activate(); }
     private void ExitClick(object sender, RoutedEventArgs e) => _ = ExitAsync();
-    private void SnapshotClick(object sender, RoutedEventArgs e)
+    private async void SnapshotClick(object sender, RoutedEventArgs e)
     {
+        if (_snapshotTask is { IsCompleted: false }) return;
         var frame = _capture.LatestFrame;
         if (frame is null) { _viewModel.Notice = "저장할 캡처 프레임이 없습니다."; return; }
         try
         {
-            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RF4Overlay", "diagnostics");
-            Directory.CreateDirectory(directory);
-            var path = Path.Combine(directory, "capture-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".png");
-            var bitmap = BitmapSource.Create(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null, frame.Pixels.ToArray(), frame.Stride);
-            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-            using var stream = File.Create(path); encoder.Save(stream);
-            _viewModel.Notice = "진단 이미지 저장: " + path;
+            _snapshotTask = Task.Run(() =>
+            {
+                var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "RF4Overlay", "diagnostics");
+                Directory.CreateDirectory(directory);
+                var path = Path.Combine(directory, "capture-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".png");
+                var bitmap = BitmapSource.Create(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null, frame.Pixels.ToArray(), frame.Stride);
+                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var stream = File.Create(path); encoder.Save(stream);
+                return path;
+            });
+            _viewModel.Notice = "진단 이미지 저장: " + await _snapshotTask;
         }
         catch (Exception error) { _viewModel.Notice = "진단 저장 실패: " + error.Message; }
     }
@@ -113,11 +125,14 @@ public partial class MainWindow : Window
         // Stop sources first, then wait for runtime cleanup before process shutdown.
         try
         {
+            await _startupTask;
+            _tray?.Dispose();
             await _input.DisposeAsync();
             await _capture.DisposeAsync();
             await _hotkeys.DisposeAsync();
             await _runtime.DisposeAsync();
-            _tray?.Dispose();
+            await _store.DisposeAsync();
+            if (_snapshotTask is not null) { try { await _snapshotTask; } catch { /* Already shown by SnapshotClick. */ } }
             _viewModel.Dispose();
             _exiting = true;
             Application.Current.Shutdown();

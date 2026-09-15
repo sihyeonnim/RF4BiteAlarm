@@ -1,103 +1,93 @@
-# 현재 상태
+﻿# 현재 구현 상태
 
 최종 갱신: 2026-09-15 (Asia/Seoul)
 
-## 완료된 Phase
+## 완료
 
-**Phase 1 — 개발환경 및 기본 모듈 구조 완료**
+- Phase 1: 모듈형 WPF 솔루션 및 개발환경.
+- Feature runtime: 비동기 실행, Feature별 명령 직렬화, 중복 시작/정지,
+  취소, 종료 대기, 상태 통지, Faulted 오류 격리.
+- Global Hotkey: 실제 Windows keyboard hook, down/up·repeat 억제,
+  정확한 modifier 조합, 반복/혼합 sequence, 최대 key 간격, prefix/중복 충돌 거절.
+- Player Activity: keyboard/mouse hook을 공유하며 모든 injected 입력을 실제 활동에서 제외.
+- UI/Tray/Hotkey: 같은 FeatureCommandDispatcher 경로.
+- Tray: 열기, 세 Feature Toggle, Exit. 미구현 Feature 비활성화.
+- Audio: NAudio 2.2.1, 일회성 tick/alarm, 음량, 정지/재생, Feature별 voice 정리.
+- Metronome: BPM 20–300, 실행 중 설정 변경, 목표 시각 기반 스케줄,
+  밀린 박자 건너뛰기, Start/Stop/Toggle.
+- 설정: 실제 키 기록 UI, 최대 8-stroke, 간격 100–5000ms, JSON 저장/복원.
+  비동기 단일 writer가 최신 설정을 저장하며 앱 종료 시 저장 완료를 기다림.
+- WGC: D3D11/WinRT, HWND/PID 탐색, 프레임 CPU 복사, resize pool 재생성,
+  최소화/창 종료/프레임 중단 및 오류 후 재연결, 자원 정리.
+- 진단 UI: 연결 상태, 프레임 크기/수, 수동 PNG 저장. 저장 작업은 UI thread 밖에서 수행.
+- Bite Alarm 준비: detector interface, 순수 상태 머신, 반복 알람 세션,
+  사용자 입력 확인, 안정적 UI 소멸 확인 후 재무장, 구독/오디오/취소 정리.
+  실제 detector가 없어 제품 UI에서는 계속 사용 불가.
+- Auto Pilking: placeholder 유지. 실제 자동 입력 코드는 없음.
 
-- 기존 리포지터리는 .git만 있었고 커밋은 없었음.
-- 기존 .NET SDK 10.0.401, Git 2.53.0, WindowsDesktop runtime/targeting pack 확인.
-- RF4Overlay.slnx 및 App/Core/Infrastructure/Features/Tests 5개 프로젝트 생성.
-- 공통 Start/Stop/Toggle dispatcher 및 독립 Feature 등록.
-- 캡처/알람/사용자 입력/입력 자동화/Global Hotkey 계약 정의.
-- 단일 키·modifier·반복 key sequence 표현 및 유효성 검사.
-- WPF 기본 화면: 3개 Feature 상태와 준비 중 버튼 표시.
-- 빌드 결과물 제외, SDK 고정, nullable 및 경고 오류 처리 설정.
-
-## 검증
+## 최신 검증
 
 - `dotnet build`: 성공, 경고 0 / 오류 0.
-- `dotnet test`: 전체 8개 통과, 실패 0 / 건너뜀 0.
-- 실제 실행 파일을 computer-use로 실행: 창 제목, 3개 Feature 문구,
-  비활성 버튼을 스크린샷 및 접근성 트리에서 확인.
-- 창 닫기 버튼으로 종료 후 창 목록에서 제거된 것 확인.
-- 실제 게임 감지/소리/Hotkey/자동 입력 검증은 아직 대상이 아님.
+- `dotnet test`: **30개 통과** (순수 로직 25, Windows 통합 5), 실패/건너뜀 0.
+- Runtime: 중복 start/stop, 동시 Toggle, 대기 명령 취소, 취소 callback 오류,
+  실행 완료/실패와 Stop 경합, shutdown, observer 오류 격리.
+- Hotkey: 반복/혼합 sequence, repeat 억제, modifier, timeout, prefix/중복,
+  injected 제외, immutable 설정 및 JSON round-trip.
+- Metronome: 목표 시각 10,000박자 계산, 지연 건너뛰기, 시작/정지/재시작, voice dispose.
+- Bite: 즉시/반복 알람, acknowledge, 동일 UI 중복 억제, 안정적 소멸,
+  캡처 실패, 실제 fake detector 세션, 취소/구독 해제.
+- Windows: 실제 파란 WPF 창을 빨간 창으로 가린 상태의 WGC 픽셀 확인,
+  resize, 창 종료, Hook 중복 시작/정리, 실제 audio voice(음량 0), 설정 최종 저장.
+- computer-use: Metronome 시작/정지/재시작 UI, 입력 모니터 초기화,
+  NumPad1 세 번 기록·저장, BPM 150 적용과 설정 파일 저장 확인.
+- computer-use: RF4 부재 상태 표시, 진단 PNG 저장, 실행 중 앱 정상 종료 및
+  프로세스 제거 확인. 테스트 변경은 BPM 120 / Ctrl+F8로 복원.
+- 실제 청각, 물리 keyboard hotkey 및 Tray 메뉴 클릭은 아직 사용자 확인 필요.
+  computer-use의 synthetic 키는 전역 입력에서 의도적으로 제외하므로 물리 입력 검증을 대신하지 않는다.
+
+## 발견 후 수정한 문제
+
+- 초기 샌드박스 MSBuild named pipe 접근 거부/NuGet 제한: 승인된 도구 실행 환경에서 검증.
+- WGC 정적 테스트 창 resize 후 새 프레임이 오지 않는 타이밍 의존성:
+  테스트 창을 주기적으로 갱신하여 가림/resize 검증을 안정화.
+- Feature 종료 직전 Stop이 마지막 상태를 덮는 경합: 실행 종료 결과를 따로 보관하고
+  Stop 완료 시 최종 상태를 확정. 정상/실패 양쪽 회귀 테스트 추가.
+- Steam 스트리밍 창 제목이 RF4였지만 영상은 다른 게임인 실제 사례 확인:
+  **스트리밍 창은 RF4 자동 연결에서 제외**. 해당 임시 진단 이미지는 삭제.
+  1920×1080 프레임/PNG 저장은 일반 WGC 검증이며 실제 RF4 성공으로 계산하지 않음.
+- 시작/종료 경합과 중복 capture dispose 처리 보강.
+- 설정/PNG 디스크 작업을 UI thread 밖으로 이동.
+
+## BLOCKED
+
+- **실제 Bite UI 이미지, 해상도별 모습, 상대 좌표**가 없어 실제 detector는 구현하지 않음.
+  임의 템플릿/좌표/영상 threshold는 추가하지 않았음.
+
+## NEEDS_REAL_RF4_TEST
+
+- RF4 본체 창 탐색(실행 파일 이름 포함), 게임 프레임, 가림, 창 크기 변경,
+  게임 종료/재실행, 최소화 복원, 그래픽 device loss 복구.
+- HDR/배율/독점 전체화면/권한 수준이 다른 게임 창에서의 동작.
+- 물리 키/마우스 입력과 게임 포커스 밖 Hotkey, 청각적 박자/음량, Tray 메뉴 동작.
+
+## 알려진 제한
+
+- 기본 자동 연결 대상 이름: rf4_x64 / rf4 / RussianFishing4. 실제 설치에서 확인 필요.
+- 원격 Steam 스트리밍은 제목이 실제 게임을 증명하지 않아 자동 연결하지 않는다.
+- Bite Alarm의 실제 detector/제품 활성화 및 Auto Pilking은 미구현.
+- Hotkey는 다른 프로그램에 키를 전달하며 다른 앱의 binding 충돌을 조회하지 않는다.
+- Hook timeout에 따른 Windows의 조용한 해제는 플랫폼 제약.
+- 모든 injected 입력을 제외하므로 일부 접근성 도구/원격 입력도 물리 활동으로 처리되지 않을 수 있음.
+- WGC는 BGRA8 CPU 복사 기반, 약 30fps polling. 5초 무프레임 시 다시 연결하므로
+  완전히 정적인 창에서도 재연결이 발생할 수 있음. HDR 전용 처리 없음.
+- WindowsTests는 실제 데스크톱/그래픽·오디오 장치가 필요하며 headless 검증 대상이 아니다.
+- WindowsTests 실행은 자체 테스트 창을 잠깐 표시한다.
+- 프로세스 단일 인스턴스 제한은 아직 없으므로 앱은 한 번만 실행하는 것을 권장.
 
 ## 다음 작업
 
-1. Feature 비동기 수명, 상태 변경 알림, 명령 직렬화 및 오류 표시.
-2. Infrastructure 입력 관찰과 Hotkey sequence 매칭, Tray 명령 연결.
-3. Metronome 및 소리 서비스 구현 후 실행/정지 검증.
-4. WGC 캡처를 별도로 검증한 뒤 실제 UI 자료를 받아 Bite Alarm 구현.
-
-## 알려진 제약 및 문제
-
-- 현재 3개 Feature는 모두 명시적인 미구현 placeholder이며 실행 불가.
-- Infrastructure는 프로젝트 경계만 존재하며 Windows API 구현은 없음.
-- Hotkey는 표현 계약만 있음. 시간/반복/충돌 매칭 엔진 및 Tray는 미구현.
-- Bite Alarm 상태 머신, 반복 알람, 사용자 입력 서비스도 미구현.
-- 실제 입질 이미지/해상도/좌표 미제공. 임의 좌표나 감지 임계값을 넣지 않았음.
-- Auto Pilking 운영정책은 실제 구현 전에 확인할 예정.
-- 샌드박스 NuGet 접속 실패는 승인된 `dotnet restore`로 해결함.
-- 샌드박스 기본 빌드는 오류 상세 없이 실패했고 단일 노드 진단에서
-  컴파일러 named pipe UnauthorizedAccessException 확인. 승인된 환경의 빌드는 정상.
-  단일 노드 진단 빌드도 fallback 후 성공함. 프로젝트 설정으로 보안 제한을 우회하지 않음.
-- 샌드박스 `dotnet test`는 출력 없이 지연되어 중단을 요청했으며,
-  승인된 환경에서 `dotnet test`를 실행해 8개 통과 확인.
-
-## 2026-09-15 Feature runtime
-
-비동기 RunAsync 기반으로 전환. Feature별 명령 직렬화, 중복 start/stop, 작업 취소와 종료 대기,
-Faulted 상태 및 UI 통지를 구현했다. 명령 취소 토큰은 대기 중인 명령에만 적용되고,
-시작된 Feature 수명은 Stop 또는 앱 종료로 취소된다. 상태 구독자는 UI dispatcher로 전달한다.
-현재 모든 Feature는 여전히 Unavailable이며 다음 단계에서 Metronome을 연결한다.
-검증: dotnet build 성공(경고/오류 0), dotnet test 5개 통과.
-
-## 2026-09-15 Global Hotkey engine
-
-Windows 전용 키보드/마우스 저수준 hook과 별도 메시지 루프를 구현했다.
-콜백은 bounded queue에 관찰 데이터를 넣고 즉시 반환하며 입력을 차단하지 않는다.
-worker가 injected 입력을 제외하고 사용자 활동과 key down/up을 전달한다.
-순수 matcher는 반복 억제, 정확한 modifier, 최대 key 간격, 반복/혼합 sequence를 지원한다.
-중복/prefix 설정은 거절한다. match 후 history를 소비하고 비-prefix 겹침은 가장 긴 suffix 우선이다.
-검증: build 경고/오류 0, test 10개 통과. 실제 hook/UI 연결은 다음 작업에서 검증한다.
-
-## 2026-09-15 Audio / Metronome / Tray
-
-공통 AudioService(NAudio 2.2.1), Feature별 voice 및 one-shot tick/alarm, volume/stop을 구현했다.
-Metronome은 BPM 20–300, 누적 drift를 줄이는 목표 시각 스케줄 및 지연 박자 건너뛰기를 사용한다.
-WPF 버튼/Tray/Hotkey는 같은 runtime 명령을 호출한다. 실제 키 기록으로 최대 8-key sequence를
-등록할 수 있고 설정은 LocalApplicationData/RF4Overlay/settings.json에 저장한다.
-X는 Tray 숨김, 명시적 종료는 hook/명령 큐/runtime/audio 정리 후 종료다.
-검증: build 경고/오류 0, test 14개 통과. computer-use로 입력 모니터 초기화,
-Metronome 시작/정지/재시작 상태 변경 및 실행 중 명시적 종료 후 프로세스 제거 확인.
-실제 청각 및 물리 키 전역 단축키/Tray 메뉴 클릭은 사용자 검증 필요.
-UIA BPM set_value는 도구 오류로 실패하여 그 경로는 아직 검증하지 않았다.
-
-## 2026-09-15 WGC foundation
-
-WGC CreateFreeThreaded + D3D11 device interop + SoftwareBitmap CPU 복사 구현.
-RF4 HWND/PID 탐색, Steam 스트리밍 창 구분, 최소화/창 종료/5초 프레임 중단 처리,
-크기 변경 시 pool 재생성, 실패 시 장치/세션 정리 후 2초 재연결을 구현했다.
-App/Infrastructure target은 Windows 10.0.19041 API로 지정했다.
-진단 UI: 연결 상태, frame dimensions/count, 사용자가 요청할 때만 PNG 저장.
-검증: dotnet build 경고/오류 0. dotnet test 총 17개(순수 14 + Windows 통합 3) 통과.
-Windows 통합 테스트가 실제 WPF 테스트 창의 파란 픽셀을 캡처하고,
-빨간 창으로 가린 상태에서 resize된 프레임도 파란색인지 확인했다. 창 종료 예외,
-hook 시작/중복 정리, 음량 0의 실제 audio voice 생성/재생/정리도 통과했다.
-NEEDS_REAL_RF4_TEST: RF4 본체는 발견되지 않았으며 현재 Steam streaming_client만 존재한다.
-본체 게임 캡처/재실행/device loss 실물 재현은 아직 검증하지 않았다.
-
-## 2026-09-15 Bite Alarm 준비
-
-감지기 인터페이스와 독립적인 상태 머신 및 알람 세션을 구현했다.
-즉시 1회/설정 간격 반복, 물리 입력 후 중단, 같은 UI 유지 시 중복 방지,
-안정적인 UI 소멸 확인 후 재무장, 캡처 실패의 소멸 오인 방지를 테스트한다.
-세션은 입력/반복/관찰을 직렬화하고 취소 시 구독과 오디오를 정리한다.
-실제 detector가 없어 catalog의 Bite Alarm은 계속 Unavailable이다.
-검증: build 경고/오류 0, test 총 22개(순수 19 + Windows 3) 통과.
-WGC 재검증에서 정적 창의 resize 후 새 프레임 대기가 timeout 되어 테스트 창을 주기적으로
-갱신하도록 수정했다. 실제 OS 캡처는 화면 갱신 시 프레임을 제공할 수 있다.
-computer-use: NumPad1 → NumPad1 → NumPad1 기록과 저장 확인.
-BLOCKED: 실제 Bite UI 이미지/해상도/상대 좌표 제공 전 실제 detector 구현 금지.
+1. 실제 RF4에서 위 호환성/캡처 항목을 검증하고 발견된 문제 수정.
+2. 제공된 Bite UI 자료로 detector를 구현하고 기존 세션을 Feature runtime에 연결.
+3. 실제 반복 간격/소멸 확인 옵션을 사용자 설정/UI에 노출하고 게임에서 튜닝.
+4. Auto Pilking은 실제 구현 직전에 최신 공식 운영정책을 조사하고 출처/날짜 기록.
+   불허 또는 허용 범위가 확인되지 않으면 자동 입력을 구현하지 않음.

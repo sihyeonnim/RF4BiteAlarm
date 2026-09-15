@@ -55,6 +55,7 @@ public sealed class FeatureCommandDispatcher : IAsyncDisposable
             if (entry.Run is { IsCompleted: false }) return new(true, "이미 실행 중입니다.");
             entry.Cancellation?.Dispose();
             entry.Cancellation = new();
+            entry.Terminal = null;
             var token = entry.Cancellation.Token;
             SetStatus(entry, FeatureState.Running);
             entry.Run = Task.Run(async () =>
@@ -62,13 +63,13 @@ public sealed class FeatureCommandDispatcher : IAsyncDisposable
                 try
                 {
                     await entry.Feature.RunAsync(token).ConfigureAwait(false);
-                    SetStatus(entry, FeatureState.Stopped);
+                    CompleteRun(entry, FeatureState.Stopped);
                 }
                 catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
-                    SetStatus(entry, FeatureState.Stopped);
+                    CompleteRun(entry, FeatureState.Stopped);
                 }
-                catch (Exception error) { SetStatus(entry, FeatureState.Faulted, error.Message); }
+                catch (Exception error) { CompleteRun(entry, FeatureState.Faulted, error.Message); }
             }, CancellationToken.None);
             return new(true, "시작했습니다.");
         }
@@ -81,9 +82,19 @@ public sealed class FeatureCommandDispatcher : IAsyncDisposable
         if (entry.Run is { IsCompleted: false })
         {
             SetStatus(entry, FeatureState.Stopping);
-            await entry.Cancellation!.CancelAsync().ConfigureAwait(false);
+            Exception? cancellationError = null;
+            try { await entry.Cancellation!.CancelAsync().ConfigureAwait(false); }
+            catch (Exception error) { cancellationError = error; }
             await entry.Run.ConfigureAwait(false);
+            if (cancellationError is not null) SetStatus(entry, FeatureState.Faulted, cancellationError.Message);
+            else if (entry.Terminal is { } terminal) SetStatus(entry, terminal.State, terminal.Error);
         }
+    }
+
+    private void CompleteRun(Entry entry, FeatureState state, string? error = null)
+    {
+        entry.Terminal = entry.Feature.InitialStatus with { State = state, Error = error };
+        SetStatus(entry, state, error);
     }
 
     private void SetStatus(Entry entry, FeatureState state, string? error = null)
@@ -129,5 +140,6 @@ public sealed class FeatureCommandDispatcher : IAsyncDisposable
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public CancellationTokenSource? Cancellation;
         public Task? Run;
+        public FeatureStatus? Terminal;
     }
 }

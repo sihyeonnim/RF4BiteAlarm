@@ -8,11 +8,20 @@ public sealed class CaptureMonitor : IAsyncDisposable
     private readonly IGameWindowLocator _locator;
     private readonly CancellationTokenSource _cancel = new();
     private Task? _run;
+    private Task? _dispose;
+    private readonly object _lifecycle = new();
     private CapturedFrame? _latest;
     public event EventHandler<CaptureStatus>? StatusChanged;
     public CapturedFrame? LatestFrame => Volatile.Read(ref _latest);
     public CaptureMonitor(IGameWindowLocator locator) => _locator = locator;
-    public void Start() => _run ??= Task.Run(RunAsync);
+    public void Start()
+    {
+        lock (_lifecycle)
+        {
+            ObjectDisposedException.ThrowIf(_dispose is not null, this);
+            _run ??= Task.Run(RunAsync);
+        }
+    }
     private async Task RunAsync()
     {
         var token = _cancel.Token;
@@ -20,14 +29,17 @@ public sealed class CaptureMonitor : IAsyncDisposable
         {
             try
             {
-                var window = _locator.FindWindows().FirstOrDefault();
+                var candidates = _locator.FindWindows();
+                var window = candidates.FirstOrDefault(candidate => !candidate.IsStreaming);
                 if (window is null)
                 {
-                    Report(new("RF4 창을 찾지 못했습니다. 실행하면 자동 연결합니다."));
+                    Report(new(candidates.Any(candidate => candidate.IsStreaming)
+                        ? "RF4 본체 없음 · Steam 스트리밍 제목만으로 게임을 확인할 수 없습니다."
+                        : "RF4 창을 찾지 못했습니다. 실행하면 자동 연결합니다."));
                 }
                 else
                 {
-                    var label = window.IsStreaming ? "RF4 Steam 스트리밍 창" : "RF4";
+                    const string label = "RF4";
                     Report(new(label + " 연결 중"));
                     await using var capture = new WgcWindowCapture();
                     long count = 0;
@@ -48,8 +60,19 @@ public sealed class CaptureMonitor : IAsyncDisposable
         }
         Volatile.Write(ref _latest, null);
     }
-    private void Report(CaptureStatus status) => StatusChanged?.Invoke(this, status);
-    public async ValueTask DisposeAsync()
+    private void Report(CaptureStatus status)
+    {
+        foreach (EventHandler<CaptureStatus> handler in StatusChanged?.GetInvocationList() ?? [])
+        {
+            try { handler(this, status); }
+            catch (Exception error) { System.Diagnostics.Trace.TraceError(error.ToString()); }
+        }
+    }
+    public ValueTask DisposeAsync()
+    {
+        lock (_lifecycle) return new(_dispose ??= DisposeCoreAsync());
+    }
+    private async Task DisposeCoreAsync()
     {
         await _cancel.CancelAsync().ConfigureAwait(false);
         if (_run is not null) await _run.ConfigureAwait(false);
