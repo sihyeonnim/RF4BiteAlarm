@@ -88,3 +88,16 @@ Windows 통합 테스트가 실제 WPF 테스트 창의 파란 픽셀을 캡처�
 hook 시작/중복 정리, 음량 0의 실제 audio voice 생성/재생/정리도 통과했다.
 NEEDS_REAL_RF4_TEST: RF4 본체는 발견되지 않았으며 현재 Steam streaming_client만 존재한다.
 본체 게임 캡처/재실행/device loss 실물 재현은 아직 검증하지 않았다.
+
+## 2026-09-15 Bite Alarm 준비
+
+감지기 인터페이스와 독립적인 상태 머신 및 알람 세션을 구현했다.
+즉시 1회/설정 간격 반복, 물리 입력 후 중단, 같은 UI 유지 시 중복 방지,
+안정적인 UI 소멸 확인 후 재무장, 캡처 실패의 소멸 오인 방지를 테스트한다.
+세션은 입력/반복/관찰을 직렬화하고 취소 시 구독과 오디오를 정리한다.
+실제 detector가 없어 catalog의 Bite Alarm은 계속 Unavailable이다.
+검증: build 경고/오류 0, test 총 22개(순수 19 + Windows 3) 통과.
+WGC 재검증에서 정적 창의 resize 후 새 프레임 대기가 timeout 되어 테스트 창을 주기적으로
+갱신하도록 수정했다. 실제 OS 캡처는 화면 갱신 시 프레임을 제공할 수 있다.
+computer-use: NumPad1 → NumPad1 → NumPad1 기록과 저장 확인.
+BLOCKED: 실제 Bite UI 이미지/해상도/상대 좌표 제공 전 실제 detector 구현 금지.

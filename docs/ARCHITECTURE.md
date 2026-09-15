@@ -88,3 +88,11 @@ HDR 정밀 감지는 아직 대상이 아니다. 오류를 UI 소멸로 바꾸�
 공식 참조: https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture
 및 https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded
 (확인 2026-09-15).
+
+## Bite Alarm 준비 구현
+
+BiteStateMachine은 순수 입력/시각 기반이며 Windows API를 모른다. BiteAlarmSession은
+주어진 프레임 스트림과 IBiteDetector를 받아 오디오/입력 관찰을 연결한다.
+알람은 사용자 입력이 있어야 중단되며 UI 소멸만으로 acknowledge하지 않는다.
+WaitingForDisappearance에서 Present 또는 CaptureFailed가 소멸 확인 시간을 초기화한다.
+실제 시간 옵션은 호출자가 제공한다. detector와 게임별 이미지/좌표/threshold는 아직 없다.

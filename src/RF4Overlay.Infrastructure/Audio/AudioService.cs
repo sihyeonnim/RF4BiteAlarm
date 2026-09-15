@@ -25,6 +25,7 @@ public sealed class AudioService : IAudioService
         {
             if (Volatile.Read(ref _error) is { } error) throw new InvalidOperationException("오디오 장치를 사용할 수 없습니다.", error);
             _tone.Trigger(cue, volume);
+            _output.Play();
         }
         public void Stop() { _tone.Clear(); _output.Stop(); }
         public void Dispose() { _tone.Clear(); _output.Dispose(); }

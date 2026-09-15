@@ -22,10 +22,14 @@ public sealed class WindowsIntegrationTests
         var cover = new Window { Title = "RF4 WGC occlusion test", Width = 340, Height = 260, Left = 20, Top = 20,
             WindowStyle = WindowStyle.None, Background = Brushes.Red, ShowInTaskbar = false, Topmost = true };
         using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var animation = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        var bright = false;
+        animation.Tick += (_, _) => { bright = !bright; target.Background = new SolidColorBrush(Color.FromRgb(0, 0, bright ? (byte)255 : (byte)220)); };
         await using var capture = new WgcWindowCapture();
         try
         {
             target.Show();
+            animation.Start();
             await Task.Delay(200);
             var handle = new WindowInteropHelper(target).Handle;
             await using var frames = capture.CaptureAsync(handle, cancel.Token).GetAsyncEnumerator();
@@ -46,7 +50,7 @@ public sealed class WindowsIntegrationTests
             target.Close();
             await Assert.ThrowsAsync<InvalidOperationException>(async () => { await frames.MoveNextAsync(); });
         }
-        finally { cover.Close(); target.Close(); }
+        finally { animation.Stop(); cover.Close(); target.Close(); }
     });
 
     [Fact]
