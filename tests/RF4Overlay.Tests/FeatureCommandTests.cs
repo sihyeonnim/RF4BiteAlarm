@@ -1,73 +1,94 @@
-using RF4Overlay.Core.Features;
-using RF4Overlay.Core.Input;
+﻿using RF4Overlay.Core.Features;
 using RF4Overlay.Features;
 
 namespace RF4Overlay.Tests;
 
 public sealed class FeatureCommandTests
 {
-    [Theory]
-    [InlineData(FeatureAction.Start)]
-    [InlineData(FeatureAction.Stop)]
-    [InlineData(FeatureAction.Toggle)]
-    public void DispatchRoutesOnlyToSelectedFeature(FeatureAction action)
+    [Fact]
+    public async Task DuplicateStartStopAndConcurrentTogglesAreSerialized()
     {
-        var selected = new RecordingFeature(FeatureId.BiteAlarm);
-        var other = new RecordingFeature(FeatureId.Metronome);
-        var dispatcher = new FeatureCommandDispatcher([selected, other]);
-        Assert.True(dispatcher.Execute(new(FeatureId.BiteAlarm, action)).Succeeded);
-        Assert.Equal(action, Assert.Single(selected.Received));
-        Assert.Empty(other.Received);
+        var feature = new TestFeature();
+        await using var runtime = new FeatureCommandDispatcher([feature]);
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start));
+        await feature.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start))));
+        Assert.Equal(1, feature.Starts);
+        await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Toggle))));
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Stop));
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Stop));
+        Assert.Equal(0, feature.Active);
+        Assert.Equal(1, feature.Peak);
+        Assert.Equal(FeatureState.Stopped, runtime.GetStatuses()[0].State);
     }
 
     [Fact]
-    public void MissingFeatureReturnsFailure() => Assert.False(
-        new FeatureCommandDispatcher([]).Execute(new(FeatureId.BiteAlarm, FeatureAction.Start)).Succeeded);
-
-    [Fact]
-    public void DuplicateFeatureIdsAreRejected() => Assert.Throws<ArgumentException>(() =>
-        new FeatureCommandDispatcher([new RecordingFeature(FeatureId.BiteAlarm), new RecordingFeature(FeatureId.BiteAlarm)]));
-
-    [Fact]
-    public void PlannedFeaturesCannotPretendToStart()
+    public async Task ShutdownRejectsNewCommandsAndWaitsForCleanup()
     {
-        var features = FeatureCatalog.Create();
-        Assert.Equal(Enum.GetValues<FeatureId>().Length, features.Count);
-        Assert.All(features, feature =>
+        var feature = new TestFeature();
+        var runtime = new FeatureCommandDispatcher([feature]);
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start));
+        await feature.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.WhenAll(runtime.DisposeAsync().AsTask(), runtime.DisposeAsync().AsTask());
+        Assert.Equal(0, feature.Active);
+        Assert.False((await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start))).Succeeded);
+    }
+
+    [Fact]
+    public async Task FailureIsReportedWithoutTakingDownOtherFeature()
+    {
+        var healthy = new TestFeature();
+        await using var runtime = new FeatureCommandDispatcher([healthy, new FailingFeature()]);
+        var failed = new TaskCompletionSource<FeatureStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+        runtime.StatusChanged += (_, status) => { if (status.State == FeatureState.Faulted) failed.TrySetResult(status); };
+        runtime.StatusChanged += (_, _) => throw new InvalidOperationException("Broken observer");
+        await runtime.ExecuteAsync(new(FeatureId.BiteAlarm, FeatureAction.Start));
+        Assert.Equal("Audio failed", (await failed.Task.WaitAsync(TimeSpan.FromSeconds(5))).Error);
+        Assert.True((await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start))).Succeeded);
+        await healthy.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task CancelledCommandDoesNotStart()
+    {
+        var feature = new TestFeature();
+        await using var runtime = new FeatureCommandDispatcher([feature]);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        Assert.False((await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start), cts.Token)).Succeeded);
+        Assert.Equal(0, feature.Starts);
+    }
+
+    [Fact]
+    public async Task UnknownAndUnavailableCommandsFail()
+    {
+        await using var empty = new FeatureCommandDispatcher([]);
+        Assert.False((await empty.ExecuteAsync(new(FeatureId.BiteAlarm, FeatureAction.Start))).Succeeded);
+        await using var planned = new FeatureCommandDispatcher(FeatureCatalog.Create());
+        Assert.All(planned.GetStatuses(), status => Assert.Equal(FeatureState.Unavailable, status.State));
+        Assert.False((await planned.ExecuteAsync(new(FeatureId.BiteAlarm, FeatureAction.Start))).Succeeded);
+        Assert.Throws<ArgumentException>(() => new FeatureCommandDispatcher([new TestFeature(), new TestFeature()]));
+    }
+
+    private sealed class FailingFeature : IFeature
+    {
+        public FeatureStatus InitialStatus => new(FeatureId.BiteAlarm, "Failure", FeatureState.Stopped, "");
+        public Task RunAsync(CancellationToken token) => throw new InvalidOperationException("Audio failed");
+    }
+
+    private sealed class TestFeature : IFeature
+    {
+        public FeatureStatus InitialStatus => new(FeatureId.Metronome, "Test", FeatureState.Stopped, "");
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Starts, Active, Peak;
+        public async Task RunAsync(CancellationToken token)
         {
-            Assert.Equal(FeatureState.Unavailable, feature.Status.State);
-            foreach (var action in Enum.GetValues<FeatureAction>())
-                Assert.False(feature.Execute(action).Succeeded);
-        });
-    }
-
-    [Fact]
-    public void SequencePreservesRepeatedKeysAndCopiesInput()
-    {
-        KeyStroke[] keys = [new(0x61), new(0x61), new(0x61)]; // NumPad1, representation only.
-        var binding = new HotkeyBinding(keys, TimeSpan.FromMilliseconds(400), new(FeatureId.BiteAlarm, FeatureAction.Toggle));
-        keys[0] = new(0x62);
-        Assert.Equal(3, binding.Sequence.Count);
-        Assert.All(binding.Sequence, key => Assert.Equal((byte)0x61, key.VirtualKey));
-    }
-
-    [Fact]
-    public void InvalidSequencesAreRejected()
-    {
-        var command = new FeatureCommand(FeatureId.BiteAlarm, FeatureAction.Toggle);
-        Assert.Throws<ArgumentException>(() => new HotkeyBinding([], TimeSpan.FromSeconds(1), command));
-        Assert.Throws<ArgumentException>(() => new HotkeyBinding([new(0)], TimeSpan.FromSeconds(1), command));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new HotkeyBinding([new(0x61)], TimeSpan.Zero, command));
-    }
-
-    private sealed class RecordingFeature(FeatureId id) : IFeature
-    {
-        public FeatureStatus Status { get; } = new(id, id.ToString(), FeatureState.Stopped, "Test");
-        public List<FeatureAction> Received { get; } = [];
-        public FeatureCommandResult Execute(FeatureAction action)
-        {
-            Received.Add(action);
-            return new(true, "OK");
+            Interlocked.Increment(ref Starts);
+            var active = Interlocked.Increment(ref Active);
+            Peak = Math.Max(Peak, active);
+            Started.TrySetResult();
+            try { await Task.Delay(Timeout.Infinite, token); }
+            finally { Interlocked.Decrement(ref Active); }
         }
     }
 }

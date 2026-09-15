@@ -45,3 +45,11 @@
   단일 노드 진단 빌드도 fallback 후 성공함. 프로젝트 설정으로 보안 제한을 우회하지 않음.
 - 샌드박스 `dotnet test`는 출력 없이 지연되어 중단을 요청했으며,
   승인된 환경에서 `dotnet test`를 실행해 8개 통과 확인.
+
+## 2026-09-15 Feature runtime
+
+비동기 RunAsync 기반으로 전환. Feature별 명령 직렬화, 중복 start/stop, 작업 취소와 종료 대기,
+Faulted 상태 및 UI 통지를 구현했다. 명령 취소 토큰은 대기 중인 명령에만 적용되고,
+시작된 Feature 수명은 Stop 또는 앱 종료로 취소된다. 상태 구독자는 UI dispatcher로 전달한다.
+현재 모든 Feature는 여전히 Unavailable이며 다음 단계에서 Metronome을 연결한다.
+검증: dotnet build 성공(경고/오류 0), dotnet test 5개 통과.

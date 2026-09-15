@@ -48,3 +48,11 @@ HotkeyBinding은 virtual key + modifier의 순서와 최대 키 간격을 표현
 3. WGC 창 캡처 및 오류 복구 검증.
 4. 실제 자료 기반 입질 감지, 상태 머신, 소리 및 입력 확인 통합.
 5. 공식 정책 검토 후 허용 범위에 한해 Auto Pilking 구현 여부 결정.
+
+## Runtime 구현 결정 (2026-09-15)
+
+기존 동기 Execute 계약은 장기 실행/취소를 표현할 수 없어 IFeature.RunAsync로 교체했다.
+FeatureCommandDispatcher가 Feature별 semaphore, 실행 Task, CancellationTokenSource를 소유한다.
+서로 다른 Feature는 병행 가능하며 같은 Feature의 명령은 직렬화된다.
+Shutdown은 새 명령을 거절하고 모든 실행의 finally 정리가 완료될 때까지 비동기로 기다린다.
+상태는 불변 snapshot으로 전달하고 개별 Feature 오류는 Faulted로 격리한다.

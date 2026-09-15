@@ -7,9 +7,21 @@ namespace RF4Overlay.App;
 
 public partial class MainWindow : Window
 {
+    private readonly FeatureCommandDispatcher _runtime = new(FeatureCatalog.Create());
+    private bool _closing;
     public MainWindow()
     {
         InitializeComponent();
-        DataContext = new MainViewModel(new FeatureCommandDispatcher(FeatureCatalog.Create()));
+        DataContext = new MainViewModel(_runtime);
+        Closing += async (_, e) =>
+        {
+            if (_closing) return;
+            e.Cancel = true;
+            IsEnabled = false;
+            await _runtime.DisposeAsync();
+            ((MainViewModel)DataContext).Dispose();
+            _closing = true;
+            Close();
+        };
     }
 }
