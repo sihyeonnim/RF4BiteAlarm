@@ -56,3 +56,14 @@ FeatureCommandDispatcher가 Feature별 semaphore, 실행 Task, CancellationToken
 서로 다른 Feature는 병행 가능하며 같은 Feature의 명령은 직렬화된다.
 Shutdown은 새 명령을 거절하고 모든 실행의 finally 정리가 완료될 때까지 비동기로 기다린다.
 상태는 불변 snapshot으로 전달하고 개별 Feature 오류는 Faulted로 격리한다.
+
+## Hotkey 구현 결정
+
+GetLastInputInfo는 입력 출처를 구분하지 못하므로 사용하지 않는다.
+WH_KEYBOARD_LL/WH_MOUSE_LL의 injected flags를 사용하여 모든 synthetic 입력을 제외한다.
+전용 hook thread → bounded 입력 queue → matcher → bounded 명령 queue → 공통 runtime 경로다.
+입력 queue 포화 시 matcher를 reset한다. 키 내용은 디스크에 기록하지 않는다.
+앱 간 단축키 충돌은 감지할 수 없으며 입력은 원래 앱에도 전달된다.
+공식 참조: https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc
+및 https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-kbdllhookstruct
+(확인 2026-09-15). Hook timeout에 따른 OS의 조용한 해제는 플랫폼 제약이다.

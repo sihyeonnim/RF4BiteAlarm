@@ -53,3 +53,12 @@ Faulted 상태 및 UI 통지를 구현했다. 명령 취소 토큰은 대기 중
 시작된 Feature 수명은 Stop 또는 앱 종료로 취소된다. 상태 구독자는 UI dispatcher로 전달한다.
 현재 모든 Feature는 여전히 Unavailable이며 다음 단계에서 Metronome을 연결한다.
 검증: dotnet build 성공(경고/오류 0), dotnet test 5개 통과.
+
+## 2026-09-15 Global Hotkey engine
+
+Windows 전용 키보드/마우스 저수준 hook과 별도 메시지 루프를 구현했다.
+콜백은 bounded queue에 관찰 데이터를 넣고 즉시 반환하며 입력을 차단하지 않는다.
+worker가 injected 입력을 제외하고 사용자 활동과 key down/up을 전달한다.
+순수 matcher는 반복 억제, 정확한 modifier, 최대 key 간격, 반복/혼합 sequence를 지원한다.
+중복/prefix 설정은 거절한다. match 후 history를 소비하고 비-prefix 겹침은 가장 긴 suffix 우선이다.
+검증: build 경고/오류 0, test 10개 통과. 실제 hook/UI 연결은 다음 작업에서 검증한다.
