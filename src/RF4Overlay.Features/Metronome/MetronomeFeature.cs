@@ -6,12 +6,30 @@ namespace RF4Overlay.Features.Metronome;
 
 public sealed class MetronomeSettings
 {
-    private int _bpm = 120;
+    public const double MinimumPeriodSeconds = 0.2;
+    public const double MaximumPeriodSeconds = 60;
+
+    private double _periodSeconds = 0.5;
     private float _volume = 0.5f;
-    public int Bpm
+    public double Bpm
     {
-        get => Volatile.Read(ref _bpm);
-        set { if (value is < 20 or > 300) throw new ArgumentOutOfRangeException(nameof(value), "BPM은 20–300입니다."); Volatile.Write(ref _bpm, value); }
+        get => 60d / PeriodSeconds;
+        set
+        {
+            if (!double.IsFinite(value) || value is < 1 or > 300)
+                throw new ArgumentOutOfRangeException(nameof(value), "BPM은 1–300입니다.");
+            PeriodSeconds = 60d / value;
+        }
+    }
+    public double PeriodSeconds
+    {
+        get => Volatile.Read(ref _periodSeconds);
+        set
+        {
+            if (!double.IsFinite(value) || value is < MinimumPeriodSeconds or > MaximumPeriodSeconds)
+                throw new ArgumentOutOfRangeException(nameof(value), "주기는 0.2–60초입니다.");
+            Volatile.Write(ref _periodSeconds, value);
+        }
     }
     public float Volume
     {
@@ -46,7 +64,7 @@ public sealed class MetronomeFeature(IAudioService audio, MetronomeSettings sett
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 voice.Play(SoundCue.Tick, settings.Volume);
-                target = BeatSchedule.Next(target, clock.Elapsed, TimeSpan.FromSeconds(60d / settings.Bpm));
+                target = BeatSchedule.Next(target, clock.Elapsed, TimeSpan.FromSeconds(settings.PeriodSeconds));
                 TimeSpan remaining;
                 while ((remaining = target - clock.Elapsed) > TimeSpan.Zero)
                     await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);

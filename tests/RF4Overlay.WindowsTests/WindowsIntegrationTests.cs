@@ -92,10 +92,12 @@ public sealed class WindowsIntegrationTests
             await using (var store = new SettingsStore(path))
             {
                 Assert.Equal(120, store.Load().Bpm);
-                for (var bpm = 120; bpm <= 180; bpm++) store.Save(UserSettings.Default with { Bpm = bpm });
+                for (var bpm = 120; bpm <= 180; bpm++)
+                    store.Save(UserSettings.Default with { Bpm = bpm, PeriodSeconds = 60d / bpm });
             }
             await using var loaded = new SettingsStore(path);
             Assert.Equal(180, loaded.Load().Bpm);
+            Assert.Equal(60d / 180, loaded.Load().EffectivePeriodSeconds, 10);
         }
         finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
     }

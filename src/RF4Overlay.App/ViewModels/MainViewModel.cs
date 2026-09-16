@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Globalization;
 using System.Windows.Input;
 using System.Windows.Threading;
 using RF4Overlay.Core.Features;
@@ -42,7 +43,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly List<KeyStroke> _recorded = [];
     private FeatureId? _recording;
     private string _notice = "", _inputStatus = "전역 입력 준비 중", _connectionStatus = "RF4 연결: 캡처 준비 전";
-    private string _bpmText, _gapText = "500";
+    private string _bpmText, _periodText, _gapText = "500";
     public event EventHandler? RecordingChanged;
     public IReadOnlyList<FeatureViewModel> Features { get; }
     public AsyncCommand CancelRecordingCommand { get; }
@@ -56,9 +57,32 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         set
         {
             _bpmText = value; Changed();
-            if (int.TryParse(value, out var bpm) && bpm is >= 20 and <= 300)
-            { _settings.Bpm = bpm; Notice = "BPM을 적용했습니다."; SaveSettings(); }
-            else Notice = "BPM은 20–300 사이의 정수로 입력하세요. 이전 유효 값이 유지됩니다.";
+            if (TryNumber(value, out var bpm) && bpm is >= 1 and <= 300)
+            {
+                _settings.Bpm = bpm;
+                _periodText = FormatNumber(_settings.PeriodSeconds);
+                Changed(nameof(PeriodText));
+                Notice = "BPM을 적용했습니다.";
+                SaveSettings();
+            }
+            else Notice = "BPM은 1–300 사이의 숫자로 입력하세요. 이전 유효 값이 유지됩니다.";
+        }
+    }
+    public string PeriodText
+    {
+        get => _periodText;
+        set
+        {
+            _periodText = value; Changed();
+            if (TryNumber(value, out var seconds) && seconds is >= MetronomeSettings.MinimumPeriodSeconds and <= MetronomeSettings.MaximumPeriodSeconds)
+            {
+                _settings.PeriodSeconds = seconds;
+                _bpmText = FormatNumber(_settings.Bpm);
+                Changed(nameof(BpmText));
+                Notice = "소리 주기를 적용했습니다.";
+                SaveSettings();
+            }
+            else Notice = "주기는 0.2–60초 사이의 숫자로 입력하세요. 이전 유효 값이 유지됩니다.";
         }
     }
     public double Volume
@@ -71,14 +95,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public MainViewModel(FeatureCommandDispatcher runtime, MetronomeSettings settings, IEnumerable<HotkeySetting> hotkeys,
         Action<IReadOnlyList<HotkeyBinding>> apply, Action<UserSettings> save)
     {
-        _runtime = runtime; _settings = settings; _apply = apply; _save = save; _bpmText = settings.Bpm.ToString();
+        _runtime = runtime; _settings = settings; _apply = apply; _save = save;
+        _bpmText = FormatNumber(settings.Bpm); _periodText = FormatNumber(settings.PeriodSeconds);
         _hotkeys = hotkeys.ToDictionary(h => h.Feature);
         Features = runtime.GetStatuses().Select(s => new FeatureViewModel(s, runtime, () => RecordOrSave(s.Id))).ToArray();
         CancelRecordingCommand = new(() => { CancelRecording(); return Task.CompletedTask; });
         apply(Snapshot().Bindings()); RefreshHotkeyText();
         runtime.StatusChanged += OnStatusChanged;
     }
-    private UserSettings Snapshot() => new(_settings.Bpm, _settings.Volume, _hotkeys.Values.ToArray());
+    private UserSettings Snapshot() => new(_settings.Bpm, _settings.Volume, _hotkeys.Values.ToArray(), _settings.PeriodSeconds);
     public void SaveSettings() => _save(Snapshot());
     private void RecordOrSave(FeatureId id)
     {
@@ -89,7 +114,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 if (_recorded.Count == 0) throw new ArgumentException("키를 한 번 이상 입력하세요.");
                 if (!int.TryParse(GapText, out var gap) || gap is < 100 or > 5000) throw new ArgumentException("키 간격은 100–5000ms입니다.");
                 var candidate = _hotkeys.Values.Where(h => h.Feature != id).Append(new(id, _recorded.ToArray(), gap)).ToArray();
-                var settings = new UserSettings(_settings.Bpm, _settings.Volume, candidate);
+                var settings = new UserSettings(_settings.Bpm, _settings.Volume, candidate, _settings.PeriodSeconds);
                 settings.Validate(); _apply(settings.Bindings());
                 _hotkeys[id] = candidate.Last();
                 CancelRecording(); SaveSettings(); Notice = "단축키를 저장했습니다.";
@@ -125,6 +150,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private static string Format(KeyStroke stroke) =>
         (stroke.Modifiers == KeyModifiers.None ? "" : stroke.Modifiers.ToString().Replace(", ", "+") + "+") +
         KeyInterop.KeyFromVirtualKey(stroke.VirtualKey);
+    private static bool TryNumber(string value, out double number) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out number);
+    private static string FormatNumber(double value) => value.ToString("0.###", CultureInfo.CurrentCulture);
     private void OnStatusChanged(object? sender, FeatureStatus status) =>
         _ui.BeginInvoke(() => Features.Single(f => f.Id == status.Id).Update(status));
     public void Dispose() => _runtime.StatusChanged -= OnStatusChanged;

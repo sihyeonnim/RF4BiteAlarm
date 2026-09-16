@@ -19,7 +19,10 @@
                     <StackPanel>
                         <TextBlock Text="Metronome 설정 · 변경은 다음 박자에 반영됩니다."/>
                         <WrapPanel Margin="0,10,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="BPM (20–300)" VerticalAlignment="Center"/>
+                            <TextBlock Text="주기(sec, 0.2–60)" VerticalAlignment="Center"/>
+                            <TextBox Text="{Binding PeriodText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="소리 주기(초)"
+                                     Width="70" Margin="12,0,20,0"/>
+                            <TextBlock Text="BPM (1–300)" VerticalAlignment="Center"/>
                             <TextBox Text="{Binding BpmText, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="BPM"
                                      Width="70" Margin="12,0,20,0"/>
                             <TextBlock Text="음량" VerticalAlignment="Center"/>

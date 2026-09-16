@@ -4,7 +4,7 @@ Windows용 C# / .NET 10 / WPF RF4 보조 플랫폼입니다.
 
 ## 현재 사용할 수 있는 기능
 
-- Metronome: 시작/정지, BPM 20–300, 음량 조절.
+- Metronome: 시작/정지, 소리 주기 0.2–60초, BPM 1–300, 음량 조절.
 - WPF 버튼, System Tray, Global Hotkey가 동일 Feature Command를 호출.
 - 단일 키, modifier 조합, 반복/혼합 key sequence 기록 및 저장.
 - RF4 본체 창 자동 탐색과 Windows Graphics Capture 진단.
@@ -20,6 +20,7 @@ NumPad1 세 번도 가능합니다. 같은 기능의 키 사이 제한은 100–
 
 창 X 버튼은 Tray로 숨깁니다. 완전 종료는 '프로그램 종료' 또는 Tray의 '종료'입니다.
 설정은 사용자 LocalApplicationData/RF4Overlay/settings.json에 자동 저장됩니다.
+주기와 BPM은 `BPM = 60 / 주기(초)`로 서로 연동되며, 소수 주기도 그대로 저장됩니다.
 
 ## 개발 및 실행
 

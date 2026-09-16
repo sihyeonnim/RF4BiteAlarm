@@ -37,7 +37,24 @@ public sealed class MetronomeTests
     [Theory]
     [InlineData(0)]
     [InlineData(301)]
-    public void InvalidBpmRejected(int bpm) => Assert.Throws<ArgumentOutOfRangeException>(() => new MetronomeSettings { Bpm = bpm });
+    public void InvalidBpmRejected(double bpm) => Assert.Throws<ArgumentOutOfRangeException>(() => new MetronomeSettings { Bpm = bpm });
+
+    [Fact]
+    public void PeriodAndBpmStayInSyncWithoutLosingFractionalSeconds()
+    {
+        var settings = new MetronomeSettings { PeriodSeconds = 0.7 };
+        Assert.Equal(0.7, settings.PeriodSeconds, 10);
+        Assert.Equal(60d / 0.7, settings.Bpm, 10);
+
+        settings.Bpm = 40;
+        Assert.Equal(1.5, settings.PeriodSeconds, 10);
+    }
+
+    [Theory]
+    [InlineData(0.19)]
+    [InlineData(60.01)]
+    public void InvalidPeriodRejected(double seconds) =>
+        Assert.Throws<ArgumentOutOfRangeException>(() => new MetronomeSettings { PeriodSeconds = seconds });
 
     internal sealed class FakeAudio : IAudioService
     {

@@ -1,6 +1,6 @@
 ﻿# 현재 구현 상태
 
-최종 갱신: 2026-09-15 (Asia/Seoul)
+최종 갱신: 2026-09-16 (Asia/Seoul)
 
 ## 완료
 
@@ -13,8 +13,8 @@
 - UI/Tray/Hotkey: 같은 FeatureCommandDispatcher 경로.
 - Tray: 열기, 세 Feature Toggle, Exit. 미구현 Feature 비활성화.
 - Audio: NAudio 2.2.1, 일회성 tick/alarm, 음량, 정지/재생, Feature별 voice 정리.
-- Metronome: BPM 20–300, 실행 중 설정 변경, 목표 시각 기반 스케줄,
-  밀린 박자 건너뛰기, Start/Stop/Toggle.
+- Metronome: 소리 주기 0.2–60초와 BPM 1–300 양방향 연동, 소수 주기 보존,
+  실행 중 설정 변경, 목표 시각 기반 스케줄, 밀린 박자 건너뛰기, Start/Stop/Toggle.
 - 설정: 실제 키 기록 UI, 최대 8-stroke, 간격 100–5000ms, JSON 저장/복원.
   비동기 단일 writer가 최신 설정을 저장하며 앱 종료 시 저장 완료를 기다림.
 - WGC: D3D11/WinRT, HWND/PID 탐색, 프레임 CPU 복사, resize pool 재생성,
@@ -28,22 +28,27 @@
 ## 최신 검증
 
 - `dotnet build`: 성공, 경고 0 / 오류 0.
-- `dotnet test`: **30개 통과** (순수 로직 25, Windows 통합 5), 실패/건너뜀 0.
+- `dotnet test`: **34개 통과** (순수 로직 29, Windows 통합 5), 실패/건너뜀 0.
 - Runtime: 중복 start/stop, 동시 Toggle, 대기 명령 취소, 취소 callback 오류,
   실행 완료/실패와 Stop 경합, shutdown, observer 오류 격리.
 - Hotkey: 반복/혼합 sequence, repeat 억제, modifier, timeout, prefix/중복,
   injected 제외, immutable 설정 및 JSON round-trip.
-- Metronome: 목표 시각 10,000박자 계산, 지연 건너뛰기, 시작/정지/재시작, voice dispose.
+- Metronome: 목표 시각 10,000박자 계산, 지연 건너뛰기, 시작/정지/재시작,
+  주기/BPM 변환, 잘못된 범위 거절, 기존 BPM 설정 이관, voice dispose.
 - Bite: 즉시/반복 알람, acknowledge, 동일 UI 중복 억제, 안정적 소멸,
   캡처 실패, 실제 fake detector 세션, 취소/구독 해제.
 - Windows: 실제 파란 WPF 창을 빨간 창으로 가린 상태의 WGC 픽셀 확인,
   resize, 창 종료, Hook 중복 시작/정리, 실제 audio voice(음량 0), 설정 최종 저장.
 - computer-use: Metronome 시작/정지/재시작 UI, 입력 모니터 초기화,
   NumPad1 세 번 기록·저장, BPM 150 적용과 설정 파일 저장 확인.
+- computer-use: 주기 입력 UI 배치, 0.7초 입력 시 85.714 BPM 연동 및
+  기존 0.5초/120 BPM 복원, 앱 정상 종료 확인.
 - computer-use: RF4 부재 상태 표시, 진단 PNG 저장, 실행 중 앱 정상 종료 및
   프로세스 제거 확인. 테스트 변경은 BPM 120 / Ctrl+F8로 복원.
-- 실제 청각, 물리 keyboard hotkey 및 Tray 메뉴 클릭은 아직 사용자 확인 필요.
-  computer-use의 synthetic 키는 전역 입력에서 의도적으로 제외하므로 물리 입력 검증을 대신하지 않는다.
+- 사용자 실물 검증: Metronome 소리/BPM/음량, 다른 창에서 물리 단축키 시작/정지,
+  Tray 열기/Toggle/종료가 정상 동작함.
+- 사용자 실제 RF4 검증: 본체 실행 후 프레임 수가 안정적으로 증가하고,
+  다른 창으로 가린 상태에서도 저장한 캡처 이미지가 정상임.
 
 ## 발견 후 수정한 문제
 
@@ -62,13 +67,14 @@
 
 - **실제 Bite UI 이미지, 해상도별 모습, 상대 좌표**가 없어 실제 detector는 구현하지 않음.
   임의 템플릿/좌표/영상 threshold는 추가하지 않았음.
+  detector 계약, 캡처 프레임 계약, 반복 알람 세션, 사용자 입력 확인,
+  동일 UI 중복 방지 및 안정적 소멸 후 재무장 상태 머신까지 준비됨.
 
 ## NEEDS_REAL_RF4_TEST
 
-- RF4 본체 창 탐색(실행 파일 이름 포함), 게임 프레임, 가림, 창 크기 변경,
-  게임 종료/재실행, 최소화 복원, 그래픽 device loss 복구.
+- RF4 창 크기 변경, 게임 종료/재실행, 최소화 복원, 그래픽 device loss 복구.
 - HDR/배율/독점 전체화면/권한 수준이 다른 게임 창에서의 동작.
-- 물리 키/마우스 입력과 게임 포커스 밖 Hotkey, 청각적 박자/음량, Tray 메뉴 동작.
+- 물리 마우스 입력에 의한 Bite 알람 확인 동작은 실제 detector 연결 후 검증.
 
 ## 알려진 제한
 
@@ -86,8 +92,9 @@
 
 ## 다음 작업
 
-1. 실제 RF4에서 위 호환성/캡처 항목을 검증하고 발견된 문제 수정.
-2. 제공된 Bite UI 자료로 detector를 구현하고 기존 세션을 Feature runtime에 연결.
+1. 제공된 Bite UI 전체/비교 이미지, 캡처 해상도와 검색 영역 상대좌표로
+   detector를 구현하고 기존 세션을 Feature runtime에 연결.
+2. 실제 RF4에서 남은 창 resize/재실행/최소화/HDR 호환성 항목을 검증하고 수정.
 3. 실제 반복 간격/소멸 확인 옵션을 사용자 설정/UI에 노출하고 게임에서 튜닝.
 4. Auto Pilking은 실제 구현 직전에 최신 공식 운영정책을 조사하고 출처/날짜 기록.
    불허 또는 허용 범위가 확인되지 않으면 자동 입력을 구현하지 않음.
