@@ -11,7 +11,7 @@
   정확한 modifier 조합, 반복/혼합 sequence, 최대 key 간격, prefix/중복 충돌 거절.
 - Player Activity: keyboard/mouse hook을 공유하며 모든 injected 입력을 실제 활동에서 제외.
 - UI/Tray/Hotkey: 같은 FeatureCommandDispatcher 경로.
-- Tray: 열기, 세 Feature Toggle, Exit.
+- Tray: 열기, 네 Feature Toggle, Exit.
 - Audio: NAudio 2.2.1, 일회성 tick/alarm, 음량, 정지/재생, Feature별 voice 정리.
 - Metronome: 소리 주기 0.2–60초와 BPM 1–300 양방향 연동, 소수 주기 보존,
   실행 중 설정 변경, 목표 시각 기반 스케줄, 밀린 박자 건너뛰기, Start/Stop/Toggle.
@@ -27,11 +27,14 @@
   기본값은 3.0초 누름/3.0초 해제이며 UI spinner는 0.1초 단위로 조절한다.
   중지/종료가 누름 중 발생해도 `SendInput` key/button-up을 `finally`에서 전송하고,
   injected 입력은 기존 사용자 활동/Hotkey 관찰에서 제외한다.
+- RF4 PIP: 기존 CaptureMonitor 프레임을 재사용하는 480×300 항상 위 WPF 창.
+  비율 보존, 크기 조절, 프레임 대기 안내, 창 X/UI/Tray/Hotkey 종료를 지원한다.
+  새 기본 단축키는 Ctrl+F11이며 기존 설정에는 누락된 binding만 자동 추가한다.
 
 ## 최신 검증
 
 - `dotnet build`: 성공, 경고 0 / 오류 0.
-- `dotnet test`: **43개 통과** (순수 로직 33, Windows 통합 10), 실패/건너뜀 0.
+- `dotnet test`: **46개 통과** (순수 로직 35, Windows 통합 11), 실패/건너뜀 0.
 - Runtime: 중복 start/stop, 동시 Toggle, 대기 명령 취소, 취소 callback 오류,
   실행 완료/실패와 Stop 경합, shutdown, observer 오류 격리.
 - Hotkey: 반복/혼합 sequence, repeat 억제, modifier, timeout, prefix/중복,
@@ -56,6 +59,10 @@
   활성화된 Feature 버튼과 정상 종료 확인.
 - Auto Pilking: 기본 설정/범위 검증, 단일 키 전달, 실행 취소 전달 및 JSON 이전/왕복 테스트.
 - Windows: 임시 WPF 창에서 실제 `SendInput` 우클릭/F24의 down과 up 수신 확인.
+- PIP: Feature가 공용 frame source와 취소를 presenter에 전달하고, 실제 WPF presenter가
+  fake BGRA 프레임을 소비하며 Topmost 창을 연 뒤 취소 시 닫는 통합 테스트.
+- Windows UI Automation: 실제 제품에서 RF4 PIP 열기, Topmost, 프레임 대기 메시지,
+  두 번째 Toggle 닫기, 창 X 종료 후 재시작, Control+F11 표시 및 정상 종료 확인.
 - 사용자 실물 검증: Metronome 소리/BPM/음량, 다른 창에서 물리 단축키 시작/정지,
   Tray 열기/Toggle/종료가 정상 동작함.
 - 사용자 실제 RF4 검증: 본체 실행 후 프레임 수가 안정적으로 증가하고,
@@ -91,6 +98,7 @@
 - Auto Pilking 공식 일반 정책은 bot/macro를 금지한다. 이 빌드의 실제 게임 사용 근거는
   사용자가 밝힌 별도 허락이며 그 허락의 적용 범위는 프로그램이 독립적으로 검증하지 못한다.
 - 실제 `SendInput` down/up은 임시 WPF 창에서 검증했다. RF4에서의 입력 수신과 누름 중 정지는 실물 검증 대기.
+- PIP의 창 수명과 fake 프레임 표시는 검증했다. 실제 RF4 영상·resize·게임 재연결 표시는 실물 검증 대기.
 - Hotkey는 다른 프로그램에 키를 전달하며 다른 앱의 binding 충돌을 조회하지 않는다.
 - Hook timeout에 따른 Windows의 조용한 해제는 플랫폼 제약.
 - 모든 injected 입력을 제외하므로 일부 접근성 도구/원격 입력도 물리 활동으로 처리되지 않을 수 있음.
@@ -107,3 +115,4 @@
 3. 실제 RF4에서 남은 창 resize/재실행/최소화/HDR 호환성 항목을 검증하고 수정.
 4. 별도 허락 범위 안에서 실제 RF4가 우클릭/선택 키의 down/up을 수신하는지와
    누름 중 정지 시 즉시 해제되는지 검증.
+5. 실제 RF4에서 PIP 영상 표시와 게임 창 resize/종료/재실행을 검증.

@@ -11,6 +11,7 @@
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/RF4Overlay.Infrastructure/RF4Overlay.Infrastructure.csproj" />
     <ProjectReference Include="../../src/RF4Overlay.Features/RF4Overlay.Features.csproj" />
+    <ProjectReference Include="../../src/RF4Overlay.App/RF4Overlay.App.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="TestData\FishCaught\*.png" CopyToOutputDirectory="PreserveNewest" />

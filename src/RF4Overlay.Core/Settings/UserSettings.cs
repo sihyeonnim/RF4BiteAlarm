@@ -16,10 +16,16 @@ public sealed record UserSettings(double Bpm, float Volume, HotkeySetting[] Hotk
     [
         new(FeatureId.Metronome, [new(0x77, KeyModifiers.Control)], 500),
         new(FeatureId.BiteAlarm, [new(0x78, KeyModifiers.Control)], 500),
-        new(FeatureId.AutoPilking, [new(0x79, KeyModifiers.Control)], 500)
+        new(FeatureId.AutoPilking, [new(0x79, KeyModifiers.Control)], 500),
+        new(FeatureId.PictureInPicture, [new(0x7A, KeyModifiers.Control)], 500)
     ], 0.5);
     public double EffectivePeriodSeconds => PeriodSeconds ?? 60d / Bpm;
     public AutoPilkingSetting EffectiveAutoPilking => AutoPilking ?? AutoPilkingSetting.Default;
+    public UserSettings WithMissingDefaultHotkeys()
+    {
+        var existing = Hotkeys.Select(h => h.Feature).ToHashSet();
+        return this with { Hotkeys = Hotkeys.Concat(Default.Hotkeys.Where(h => !existing.Contains(h.Feature))).ToArray() };
+    }
     public IReadOnlyList<HotkeyBinding> Bindings() => Hotkeys.Select(h =>
         new HotkeyBinding(h.Keys, TimeSpan.FromMilliseconds(h.GapMilliseconds), new(h.Feature, FeatureAction.Toggle))).ToArray();
     public void Validate()

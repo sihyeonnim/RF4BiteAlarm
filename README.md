@@ -10,8 +10,10 @@ Windows용 C# / .NET 10 / WPF RF4 보조 플랫폼입니다.
 - RF4 본체 창 자동 탐색과 Windows Graphics Capture 진단.
 - Bite Alarm: 정규화 ROI에서 물고기 포획 아이콘을 감지하고 반복 알람 재생.
 - Auto Pilking: 우클릭 또는 단일 keyboard key를 설정한 누름/해제 시간으로 반복.
+- RF4 PIP: 공용 WGC 프레임을 크기 조절 가능한 항상 위 창에 표시.
 
-기본 단축키는 Bite Alarm **Ctrl+F9**, Metronome **Ctrl+F8**, Auto Pilking **Ctrl+F10**입니다.
+기본 단축키는 Bite Alarm **Ctrl+F9**, Metronome **Ctrl+F8**, Auto Pilking **Ctrl+F10**,
+RF4 PIP **Ctrl+F11**입니다.
 단축키는 원래 앱에도 전달됩니다.
 
 '키 기록'을 클릭하고 원하는 키/조합을 차례로 누른 뒤 '저장'을 클릭합니다.

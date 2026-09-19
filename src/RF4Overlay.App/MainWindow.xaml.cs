@@ -12,6 +12,7 @@ using RF4Overlay.Infrastructure.Input;
 using RF4Overlay.Infrastructure.Settings;
 using RF4Overlay.Infrastructure.Tray;
 using RF4Overlay.Infrastructure.Capture;
+using RF4Overlay.App.PictureInPicture;
 using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -41,6 +42,7 @@ public partial class MainWindow : Window
         string? warning = null;
         try { saved = _store.Load(); }
         catch (Exception error) { saved = UserSettings.Default; warning = "설정을 읽지 못해 기본값을 사용합니다: " + error.Message; }
+        saved = saved.WithMissingDefaultHotkeys();
         var settings = new MetronomeSettings { PeriodSeconds = saved.EffectivePeriodSeconds, Volume = saved.Volume };
         var autoSaved = saved.EffectiveAutoPilking;
         var autoSettings = new AutoPilkingSettings
@@ -50,7 +52,7 @@ public partial class MainWindow : Window
             ReleaseSeconds = autoSaved.ReleaseSeconds
         };
         _runtime = new(FeatureCatalog.Create(new AudioService(), settings, _input, _capture,
-            new WindowsInputAutomation(), autoSettings));
+            new WindowsInputAutomation(), autoSettings, new WpfPictureInPicturePresenter(Dispatcher)));
         _hotkeys = new(_input, _runtime);
         _viewModel = new(_runtime, settings, autoSettings, saved.Hotkeys,
             bindings => _hotkeys.SetBindings(bindings), PersistSettings);

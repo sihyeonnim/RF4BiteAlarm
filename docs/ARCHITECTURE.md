@@ -88,6 +88,21 @@ CaptureMonitor는 최신 프레임 하나만 유지하고 연결 상태를 UI에
 - 캡처 실패는 detector의 UI 소멸 신호로 변환하지 않음.
 - HDR 및 실제 RF4 전체화면 호환성은 실물 검증 대기.
 
+## RF4 PIP
+
+PictureInPictureFeature는 `IPictureInPicturePresenter`를 통해 표시 계층과 분리한다.
+WPF presenter는 App 계층에 있으며 CaptureMonitor의 공용 latest-only stream을 구독하므로
+Bite Alarm과 PIP를 함께 실행해도 WGC 세션을 추가로 만들지 않는다.
+
+- 기본 크기 480×300, 최소 크기 240×160, 사용자가 자유롭게 크기 조절 가능.
+- `Topmost=true`, ToolWindow, 작업 표시줄에는 별도 앱으로 표시하지 않음.
+- 영상은 비율을 보존하는 `Uniform` 방식으로 검은 배경 안에 표시.
+- RF4 프레임이 아직 없으면 `RF4 프레임 대기 중`을 표시하고 연결 후 자동 전환.
+- PIP 창 X, UI/Tray/Hotkey Toggle, 앱 종료 모두 같은 Feature 수명과 취소 경로를 사용.
+- 각 프레임은 BGRA8 BitmapSource로 만들고 freeze한 뒤 UI Dispatcher에서 교체.
+
+기존 설정에 PIP binding이 없으면 `Ctrl+F11`을 추가하며 사용자가 지정한 다른 Feature binding은 유지한다.
+
 공식 근거 (2026-09-15 확인):
 [Screen capture](https://learn.microsoft.com/en-us/windows/apps/develop/media-authoring-processing/screen-capture),
 [CreateFreeThreaded](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.direct3d11captureframepool.createfreethreaded),

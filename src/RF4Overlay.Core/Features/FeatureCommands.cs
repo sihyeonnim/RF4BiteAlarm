@@ -1,6 +1,6 @@
 ﻿namespace RF4Overlay.Core.Features;
 
-public enum FeatureId { BiteAlarm, Metronome, AutoPilking }
+public enum FeatureId { BiteAlarm, Metronome, AutoPilking, PictureInPicture }
 public enum FeatureAction { Start, Stop, Toggle }
 public enum FeatureState { Unavailable, Stopped, Running, Stopping, Faulted }
 public sealed record FeatureStatus(FeatureId Id, string Name, FeatureState State, string Description, string? Error = null);

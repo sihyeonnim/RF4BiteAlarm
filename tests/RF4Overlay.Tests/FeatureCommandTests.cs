@@ -65,7 +65,7 @@ public sealed class FeatureCommandTests
         await using var empty = new FeatureCommandDispatcher([]);
         Assert.False((await empty.ExecuteAsync(new(FeatureId.BiteAlarm, FeatureAction.Start))).Succeeded);
         await using var planned = new FeatureCommandDispatcher(FeatureCatalog.Create(new MetronomeTests.FakeAudio(), new()));
-        Assert.Equal(2, planned.GetStatuses().Count(status => status.State == FeatureState.Unavailable));
+        Assert.Equal(3, planned.GetStatuses().Count(status => status.State == FeatureState.Unavailable));
         Assert.False((await planned.ExecuteAsync(new(FeatureId.BiteAlarm, FeatureAction.Start))).Succeeded);
         Assert.Throws<ArgumentException>(() => new FeatureCommandDispatcher([new TestFeature(), new TestFeature()]));
     }

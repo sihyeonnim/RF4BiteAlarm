@@ -15,6 +15,12 @@ public interface ICaptureFrameSource
     IAsyncEnumerable<CapturedFrame> ReadFramesAsync(CancellationToken cancellationToken);
 }
 
+/// <summary>Presents the shared game capture without owning another capture session.</summary>
+public interface IPictureInPicturePresenter
+{
+    Task ShowAsync(ICaptureFrameSource frames, CancellationToken cancellationToken);
+}
+
 public interface IAlarmSound
 {
     Task PlayAsync(CancellationToken cancellationToken);

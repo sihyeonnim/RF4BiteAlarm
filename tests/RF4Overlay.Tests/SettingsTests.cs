@@ -56,4 +56,17 @@ public sealed class SettingsTests
         Assert.Equal(0.4, legacy.EffectivePeriodSeconds, 10);
         Assert.Equal(AutoPilkingSetting.Default, legacy.EffectiveAutoPilking);
     }
+
+    [Fact]
+    public void MissingPictureInPictureHotkeyGetsDefaultWithoutReplacingExistingBindings()
+    {
+        var existing = new HotkeySetting(FeatureId.Metronome, [new((byte)'M')], 700);
+        var migrated = new UserSettings(120, 0.5f, [existing]).WithMissingDefaultHotkeys();
+
+        migrated.Validate();
+        Assert.Equal(existing, migrated.Hotkeys.Single(h => h.Feature == FeatureId.Metronome));
+        var pip = migrated.Hotkeys.Single(h => h.Feature == FeatureId.PictureInPicture);
+        Assert.Equal(0x7A, Assert.Single(pip.Keys).VirtualKey);
+        Assert.Equal(KeyModifiers.Control, pip.Keys[0].Modifiers);
+    }
 }

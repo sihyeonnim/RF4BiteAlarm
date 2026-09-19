@@ -14,6 +14,8 @@ using System.Runtime.InteropServices;
 using System.Windows.Controls;
 using System.Windows.Input;
 using RF4Overlay.Core.Input;
+using RF4Overlay.App.PictureInPicture;
+using System.Windows.Automation;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 namespace RF4Overlay.WindowsTests;
@@ -115,6 +117,28 @@ public sealed class WindowsIntegrationTests
     });
 
     [Fact]
+    public Task PictureInPictureConsumesFrameStaysTopmostAndClosesOnCancellation() => OnDesktop(async () =>
+    {
+        var frames = new OneFrameSource();
+        var presenter = new WpfPictureInPicturePresenter(Dispatcher.CurrentDispatcher);
+        using var cancellation = new CancellationTokenSource();
+        var run = presenter.ShowAsync(frames, cancellation.Token);
+        await frames.Delivered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.Delay(100);
+
+        var name = new PropertyCondition(AutomationElement.NameProperty, "RF4 PIP");
+        var process = new PropertyCondition(AutomationElement.ProcessIdProperty, Environment.ProcessId);
+        var type = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Window);
+        var pip = AutomationElement.RootElement.FindFirst(TreeScope.Children, new AndCondition(name, process, type));
+        Assert.NotNull(pip);
+        Assert.True(((WindowPattern)pip.GetCurrentPattern(WindowPattern.Pattern)).Current.IsTopmost);
+
+        await cancellation.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Null(AutomationElement.RootElement.FindFirst(TreeScope.Children, new AndCondition(name, process, type)));
+    });
+
+    [Fact]
     public void AudioVoiceCreatesPlaysSilentlyAndReleases()
     {
         using var voice = new AudioService().CreateVoice();
@@ -168,6 +192,19 @@ public sealed class WindowsIntegrationTests
     {
         public IReadOnlyList<CaptureWindow> FindWindows() => [new(123, 1, "streaming_client", "Russian Fishing 4 [Streaming]", 1920, 1080, true)];
         public bool IsCurrent(CaptureWindow window) => true;
+    }
+
+    private sealed class OneFrameSource : ICaptureFrameSource
+    {
+        public TaskCompletionSource Delivered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public async IAsyncEnumerable<CapturedFrame> ReadFramesAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            Delivered.TrySetResult();
+            yield return new CapturedFrame(2, 2, 8,
+                new byte[] { 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255 });
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
     }
 
     private static Task OnDesktop(Func<Task> action)
