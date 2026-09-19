@@ -1,19 +1,53 @@
 ﻿using RF4Overlay.Core.Capture;
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 
 namespace RF4Overlay.Infrastructure.Capture;
 
 /// <summary>Diagnostic capture monitor. Re-enumerates after window loss or device failure.</summary>
-public sealed class CaptureMonitor : IAsyncDisposable
+public sealed class CaptureMonitor : ICaptureFrameSource, IAsyncDisposable
 {
     private readonly IGameWindowLocator _locator;
     private readonly CancellationTokenSource _cancel = new();
     private Task? _run;
     private Task? _dispose;
     private readonly object _lifecycle = new();
+    private readonly object _subscriptionsLock = new();
+    private readonly HashSet<Channel<CapturedFrame>> _subscriptions = [];
     private CapturedFrame? _latest;
     public event EventHandler<CaptureStatus>? StatusChanged;
     public CapturedFrame? LatestFrame => Volatile.Read(ref _latest);
     public CaptureMonitor(IGameWindowLocator locator) => _locator = locator;
+
+    public async IAsyncEnumerable<CapturedFrame> ReadFramesAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var channel = Channel.CreateBounded<CapturedFrame>(new BoundedChannelOptions(1)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false
+        });
+        lock (_lifecycle)
+        {
+            ObjectDisposedException.ThrowIf(_dispose is not null, this);
+            lock (_subscriptionsLock)
+            {
+                _subscriptions.Add(channel);
+                if (LatestFrame is { } latest) channel.Writer.TryWrite(latest);
+            }
+        }
+        try
+        {
+            await foreach (var frame in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+                yield return frame;
+        }
+        finally
+        {
+            lock (_subscriptionsLock) _subscriptions.Remove(channel);
+            channel.Writer.TryComplete();
+        }
+    }
     public void Start()
     {
         lock (_lifecycle)
@@ -47,6 +81,7 @@ public sealed class CaptureMonitor : IAsyncDisposable
                     {
                         if (!_locator.IsCurrent(window)) throw new InvalidOperationException("RF4 창이 교체되었습니다.");
                         Volatile.Write(ref _latest, frame);
+                        Publish(frame);
                         count++;
                         if (count == 1 || count % 15 == 0) Report(new(label + " 캡처 중", count, frame.Width, frame.Height));
                     }
@@ -68,6 +103,11 @@ public sealed class CaptureMonitor : IAsyncDisposable
             catch (Exception error) { System.Diagnostics.Trace.TraceError(error.ToString()); }
         }
     }
+    private void Publish(CapturedFrame frame)
+    {
+        lock (_subscriptionsLock)
+            foreach (var channel in _subscriptions) channel.Writer.TryWrite(frame);
+    }
     public ValueTask DisposeAsync()
     {
         lock (_lifecycle) return new(_dispose ??= DisposeCoreAsync());
@@ -76,6 +116,11 @@ public sealed class CaptureMonitor : IAsyncDisposable
     {
         await _cancel.CancelAsync().ConfigureAwait(false);
         if (_run is not null) await _run.ConfigureAwait(false);
+        lock (_subscriptionsLock)
+        {
+            foreach (var channel in _subscriptions) channel.Writer.TryComplete();
+            _subscriptions.Clear();
+        }
         _cancel.Dispose();
     }
 }

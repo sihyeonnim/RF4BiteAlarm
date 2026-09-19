@@ -95,6 +95,15 @@ public sealed class BiteAlarmTests
         Assert.True(audio.Disposed); Assert.Equal(0, input.Subscribers);
     }
 
+    [Fact]
+    public async Task InvalidDetectorFrameIsReportedAsCaptureFailure()
+    {
+        var detector = new FishCaughtIconDetector();
+        var invalid = new CapturedFrame(1, 1, 4, new byte[4]);
+        Assert.Equal(BiteObservation.CaptureFailed,
+            await detector.DetectAsync(invalid, CancellationToken.None));
+    }
+
     private static async IAsyncEnumerable<CapturedFrame> FailingFrames([EnumeratorCancellation] CancellationToken token = default)
     {
         await Task.Yield(); token.ThrowIfCancellationRequested();

@@ -41,7 +41,7 @@ public partial class MainWindow : Window
         try { saved = _store.Load(); }
         catch (Exception error) { saved = UserSettings.Default; warning = "설정을 읽지 못해 기본값을 사용합니다: " + error.Message; }
         var settings = new MetronomeSettings { PeriodSeconds = saved.EffectivePeriodSeconds, Volume = saved.Volume };
-        _runtime = new(FeatureCatalog.Create(new AudioService(), settings));
+        _runtime = new(FeatureCatalog.Create(new AudioService(), settings, _input, _capture));
         _hotkeys = new(_input, _runtime);
         _viewModel = new(_runtime, settings, saved.Hotkeys, bindings => _hotkeys.SetBindings(bindings), PersistSettings);
         DataContext = _viewModel;
@@ -122,15 +122,15 @@ public partial class MainWindow : Window
         IsEnabled = false;
         _viewModel.CancelRecording();
         _viewModel.SaveSettings();
-        // Stop sources first, then wait for runtime cleanup before process shutdown.
+        // Stop command producers, then features, then their input/capture sources.
         try
         {
             await _startupTask;
             _tray?.Dispose();
-            await _input.DisposeAsync();
-            await _capture.DisposeAsync();
             await _hotkeys.DisposeAsync();
             await _runtime.DisposeAsync();
+            await _input.DisposeAsync();
+            await _capture.DisposeAsync();
             await _store.DisposeAsync();
             if (_snapshotTask is not null) { try { await _snapshotTask; } catch { /* Already shown by SnapshotClick. */ } }
             _viewModel.Dispose();

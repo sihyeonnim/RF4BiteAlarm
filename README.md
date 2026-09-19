@@ -8,11 +8,11 @@ Windows용 C# / .NET 10 / WPF RF4 보조 플랫폼입니다.
 - WPF 버튼, System Tray, Global Hotkey가 동일 Feature Command를 호출.
 - 단일 키, modifier 조합, 반복/혼합 key sequence 기록 및 저장.
 - RF4 본체 창 자동 탐색과 Windows Graphics Capture 진단.
-- Bite Alarm의 상태 머신/반복 알람 기반은 구현됨. 실제 감지기는 자료 대기 중.
+- Bite Alarm: 정규화 ROI에서 물고기 포획 아이콘을 감지하고 반복 알람 재생.
 - Auto Pilking은 사용 불가. 자동 입력 구현은 없음.
 
-기본 Metronome 단축키는 **Ctrl+F8**입니다. Bite Alarm/Auto Pilking에는 Ctrl+F9/F10이
-예약되어 있으나 기능은 아직 사용 불가입니다. 단축키는 원래 앱에도 전달됩니다.
+기본 단축키는 Bite Alarm **Ctrl+F9**, Metronome **Ctrl+F8**입니다. Auto Pilking의
+Ctrl+F10은 예약되어 있으나 기능은 아직 사용 불가입니다. 단축키는 원래 앱에도 전달됩니다.
 
 '키 기록'을 클릭하고 원하는 키/조합을 차례로 누른 뒤 '저장'을 클릭합니다.
 NumPad1 세 번도 가능합니다. 같은 기능의 키 사이 제한은 100–5000ms로 설정합니다.

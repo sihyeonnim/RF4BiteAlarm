@@ -78,7 +78,8 @@ RF4 본체 프로세스 이름과 HWND/PID로 창을 찾는다. 스트리밍 제
 
 WgcWindowCapture의 iterator가 D3D11 device, WGC free-threaded pool/session과 각 frame을 소유한다.
 SoftwareBitmap으로 BGRA8 CPU 복사본을 만든다. 프레임은 dispose 후 pool을 재생성한다.
-CaptureMonitor는 최신 프레임 하나만 유지하고 연결 상태를 UI에 전달한다.
+CaptureMonitor는 최신 프레임 하나만 유지하고 연결 상태를 UI에 전달한다. Bite Alarm이
+구독하면 용량 1의 latest-only channel로 같은 프레임을 공유하여 별도 WGC 세션을 만들지 않는다.
 
 - 크기 변경: pool.Recreate.
 - 창 종료/최소화/5초 무프레임/장치 오류: 자원 정리 후 2초 간격 재탐색 및 재연결.
@@ -93,8 +94,8 @@ CaptureMonitor는 최신 프레임 하나만 유지하고 연결 상태를 UI에
 
 ## Bite Alarm
 
-제품 Feature는 실제 자료 대기로 Unavailable이며 임의 영상 detector는 없다.
-IBiteDetector와 BiteAlarmSession을 통한 fake 기반 테스트는 가능하다.
+제품 Feature는 CaptureMonitor의 프레임을 FishCaughtIconDetector에 전달한다.
+IBiteDetector와 BiteAlarmSession은 영상 판정과 알람 상태를 분리한다.
 
 상태: Inactive → Monitoring → Alerting → WaitingForDisappearance → Monitoring.
 
@@ -106,18 +107,16 @@ IBiteDetector와 BiteAlarmSession을 통한 fake 기반 테스트는 가능하�
 - 세션은 관찰/타이머/입력 확인과 오디오를 직렬화하고 종료 시 구독/소리 정리.
 - 프레임 스트림 실패는 세션을 중단시키며 정상 소멸로 간주하지 않음.
 
-영상 자료 도착 후에만 실제 detector를 작성하고 catalog에 연결한다.
-현재 반복/소멸 확인 시간은 호출자가 제공하는 옵션이며 제품 기본값으로 확정하지 않았다.
+FishCaughtIconDetector는 제공된 1920×1080 자료의 normalized ROI
+`(left 0.2750, top 0.9269, width 0.0229, height 0.0407)`만 읽는다.
+전체 화면, 액션 문구, 게이지 및 배경은 비교하지 않는다. 기준 해상도 좌표계에서 아이콘 중심과
+흰색 무채색 픽셀을 계산하고, 원형 띠 전체 비율·네 사분면의 최소 비율·원 내부 물고기 형태의
+비율이 모두 기준을 넘을 때 후보로 판정한다. 하나의 이미지 템플릿과 픽셀별 동일 비교는 사용하지 않는다.
 
-실제 detector 구현에 필요한 외부 자료:
-
-- 입질 트리거로 삼을 UI가 나타난 전체 RF4 캡처와 나타나지 않은 비교 캡처.
-- 각 캡처의 해상도, 창 모드, UI 배율.
-- UI 검색 영역의 `x, y, width, height` 또는 캡처 크기로 나눈 상대좌표.
-- 해상도/UI 배율에 따라 모양이나 위치가 달라지면 각 조합의 자료.
-
-이 자료로 검색 영역과 영상 판정 방식을 결정한다. 자료 전에는 좌표, 템플릿,
-색상 및 유사도 임계값을 제품값으로 가정하지 않는다.
+기본 3개 연속 프레임이 후보일 때만 Present를 출력하며 중간 Absent/CaptureFailed는 누적을 초기화한다.
+제품의 임시 반복 간격은 5초, 소멸 확인은 0.5초이다. 이후 UI 설정으로 노출한다.
+제공된 POSITIVE 1장과 NEGATIVE 4장의 지정 ROI crop만 WindowsTests 자산으로 보관한다.
+테스트는 crop을 1920×1080의 원래 위치에 배치하고 1280×720/2560×1440 변환도 회귀 검증한다.
 
 ## Auto Pilking
 

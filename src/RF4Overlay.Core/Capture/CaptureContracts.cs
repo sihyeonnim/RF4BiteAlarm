@@ -9,6 +9,12 @@ public interface IWindowCapture : IAsyncDisposable
     IAsyncEnumerable<CapturedFrame> CaptureAsync(nint windowHandle, CancellationToken cancellationToken);
 }
 
+/// <summary>A shared stream of the latest captured game frames.</summary>
+public interface ICaptureFrameSource
+{
+    IAsyncEnumerable<CapturedFrame> ReadFramesAsync(CancellationToken cancellationToken);
+}
+
 public interface IAlarmSound
 {
     Task PlayAsync(CancellationToken cancellationToken);

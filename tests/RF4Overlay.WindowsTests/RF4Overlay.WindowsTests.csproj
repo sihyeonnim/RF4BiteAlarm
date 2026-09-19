@@ -10,5 +10,9 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
     <Using Include="Xunit" />
     <ProjectReference Include="../../src/RF4Overlay.Infrastructure/RF4Overlay.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/RF4Overlay.Features/RF4Overlay.Features.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="TestData\FishCaught\*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
