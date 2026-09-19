@@ -7,9 +7,10 @@ using RF4Overlay.Core.Input;
 namespace RF4Overlay.Infrastructure.Input;
 
 /// <summary>Owns low-level hooks on a dedicated message-pump thread. Never suppresses input.</summary>
-public sealed class WindowsInputMonitor : IUserInputSource, IAsyncDisposable
+public sealed class WindowsInputMonitor : IUserInputSource, IMouseInputSource, IAsyncDisposable
 {
-    private readonly Channel<(KeyInput? Key, bool Injected)> _events = Channel.CreateBounded<(KeyInput?, bool)>(
+    private readonly Channel<(KeyInput? Key, MouseButtonInput? Mouse, bool Injected)> _events =
+        Channel.CreateBounded<(KeyInput?, MouseButtonInput?, bool)>(
         new BoundedChannelOptions(2048) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -20,6 +21,7 @@ public sealed class WindowsInputMonitor : IUserInputSource, IAsyncDisposable
     private uint _threadId;
     private int _overflow;
     public event EventHandler<KeyInput>? KeyReceived;
+    public event EventHandler<MouseButtonInput>? MouseButtonReceived;
     public event EventHandler<UserInput>? InputReceived;
     public event EventHandler? InputReset;
 
@@ -72,7 +74,7 @@ public sealed class WindowsInputMonitor : IUserInputSource, IAsyncDisposable
             var info = Marshal.PtrToStructure<KeyboardData>(data);
             var down = message == 0x100 || message == 0x104;
             var injected = (info.Flags & 0x12) != 0;
-            Publish((new((byte)info.Key, down, injected, Stopwatch.GetElapsedTime(0)), injected));
+            Publish((new((byte)info.Key, down, injected, Stopwatch.GetElapsedTime(0)), null, injected));
         }
         return CallNextHookEx(0, code, message, data);
     }
@@ -81,11 +83,17 @@ public sealed class WindowsInputMonitor : IUserInputSource, IAsyncDisposable
         if (code >= 0)
         {
             var info = Marshal.PtrToStructure<MouseData>(data);
-            Publish((null, (info.Flags & 3) != 0));
+            MouseButtonInput? button = message switch
+            {
+                0x0201 => new(MouseButton.Left, true, info.X, info.Y, Stopwatch.GetElapsedTime(0)),
+                0x0202 => new(MouseButton.Left, false, info.X, info.Y, Stopwatch.GetElapsedTime(0)),
+                _ => null
+            };
+            Publish((null, button, (info.Flags & 3) != 0));
         }
         return CallNextHookEx(0, code, message, data);
     }
-    private void Publish((KeyInput? Key, bool Injected) value)
+    private void Publish((KeyInput? Key, MouseButtonInput? Mouse, bool Injected) value)
     {
         if (!_events.Writer.TryWrite(value)) Interlocked.Exchange(ref _overflow, 1);
     }
@@ -99,6 +107,7 @@ public sealed class WindowsInputMonitor : IUserInputSource, IAsyncDisposable
                 if (!InputPolicy.IsPhysical(value.Injected)) continue;
                 InputReceived?.Invoke(this, new(DateTimeOffset.UtcNow));
                 if (value.Key is not null) KeyReceived?.Invoke(this, value.Key);
+                if (value.Mouse is not null) MouseButtonReceived?.Invoke(this, value.Mouse);
             }
             catch (Exception error) { Trace.TraceError(error.ToString()); }
         }

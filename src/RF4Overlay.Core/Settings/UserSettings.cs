@@ -10,14 +10,15 @@ public sealed record AutoPilkingSetting(AutomationInput Input, double HoldSecond
 }
 
 public sealed record UserSettings(double Bpm, float Volume, HotkeySetting[] Hotkeys, double? PeriodSeconds = null,
-    AutoPilkingSetting? AutoPilking = null)
+    AutoPilkingSetting? AutoPilking = null, bool ShiftLeftClickHold = false)
 {
     public static UserSettings Default => new(120, 0.5f,
     [
         new(FeatureId.Metronome, [new(0x77, KeyModifiers.Control)], 500),
         new(FeatureId.BiteAlarm, [new(0x78, KeyModifiers.Control)], 500),
         new(FeatureId.AutoPilking, [new(0x79, KeyModifiers.Control)], 500),
-        new(FeatureId.PictureInPicture, [new(0x7A, KeyModifiers.Control)], 500)
+        new(FeatureId.PictureInPicture, [new(0x7A, KeyModifiers.Control)], 500),
+        new(FeatureId.LeftClickHold, [new(0x7B, KeyModifiers.Control)], 500)
     ], 0.5);
     public double EffectivePeriodSeconds => PeriodSeconds ?? 60d / Bpm;
     public AutoPilkingSetting EffectiveAutoPilking => AutoPilking ?? AutoPilkingSetting.Default;

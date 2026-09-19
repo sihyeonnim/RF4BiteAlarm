@@ -55,6 +55,8 @@ public interface IGlobalHotkeyService : IAsyncDisposable
 }
 
 public sealed record UserInput(DateTimeOffset Timestamp);
+public enum MouseButton { Left }
+public sealed record MouseButtonInput(MouseButton Button, bool IsDown, int X, int Y, TimeSpan Timestamp);
 
 /// <summary>Physical user activity, excluding input injected by this application.</summary>
 public interface IUserInputSource
@@ -62,8 +64,20 @@ public interface IUserInputSource
     event EventHandler<UserInput>? InputReceived;
 }
 
+/// <summary>Physical mouse button events, excluding input injected by this application.</summary>
+public interface IMouseInputSource
+{
+    event EventHandler<MouseButtonInput>? MouseButtonReceived;
+    event EventHandler? InputReset;
+}
+
 /// <summary>Separate from user observation. Implementations must release held input when cancelled.</summary>
 public interface IInputAutomation
 {
     Task HoldAsync(AutomationInput input, TimeSpan duration, CancellationToken cancellationToken);
+}
+
+public interface ILeftButtonHoldAutomation
+{
+    ValueTask<IAsyncDisposable> HoldLeftButtonAsync(bool withShift, CancellationToken cancellationToken);
 }
