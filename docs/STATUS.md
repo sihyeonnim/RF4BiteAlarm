@@ -11,7 +11,7 @@
   정확한 modifier 조합, 반복/혼합 sequence, 최대 key 간격, prefix/중복 충돌 거절.
 - Player Activity: keyboard/mouse hook을 공유하며 모든 injected 입력을 실제 활동에서 제외.
 - UI/Tray/Hotkey: 같은 FeatureCommandDispatcher 경로.
-- Tray: 열기, 세 Feature Toggle, Exit. 미구현 Feature 비활성화.
+- Tray: 열기, 세 Feature Toggle, Exit.
 - Audio: NAudio 2.2.1, 일회성 tick/alarm, 음량, 정지/재생, Feature별 voice 정리.
 - Metronome: 소리 주기 0.2–60초와 BPM 1–300 양방향 연동, 소수 주기 보존,
   실행 중 설정 변경, 목표 시각 기반 스케줄, 밀린 박자 건너뛰기, Start/Stop/Toggle.
@@ -23,12 +23,15 @@
 - Bite Alarm: 제공된 normalized ROI만 검사하는 흰색 원형/내부 물고기 특징 감지기,
   기본 3개 연속 프레임 판정, 공용 WGC 프레임 구독, 반복 알람 세션과 Feature runtime 연결.
   사용자 입력 확인, 안정적 UI 소멸 후 재무장, 구독/오디오/취소 정리.
-- Auto Pilking: placeholder 유지. 실제 자동 입력 코드는 없음.
+- Auto Pilking: 기본 우클릭 또는 단일 keyboard key를 0.1–60초 범위의 누름/해제 시간으로 반복.
+  기본값은 3.0초 누름/3.0초 해제이며 UI spinner는 0.1초 단위로 조절한다.
+  중지/종료가 누름 중 발생해도 `SendInput` key/button-up을 `finally`에서 전송하고,
+  injected 입력은 기존 사용자 활동/Hotkey 관찰에서 제외한다.
 
 ## 최신 검증
 
 - `dotnet build`: 성공, 경고 0 / 오류 0.
-- `dotnet test`: **39개 통과** (순수 로직 30, Windows 통합 9), 실패/건너뜀 0.
+- `dotnet test`: **43개 통과** (순수 로직 33, Windows 통합 10), 실패/건너뜀 0.
 - Runtime: 중복 start/stop, 동시 Toggle, 대기 명령 취소, 취소 callback 오류,
   실행 완료/실패와 Stop 경합, shutdown, observer 오류 격리.
 - Hotkey: 반복/혼합 sequence, repeat 억제, modifier, timeout, prefix/중복,
@@ -48,6 +51,11 @@
   프로세스 제거 확인. 테스트 변경은 BPM 120 / Ctrl+F8로 복원.
 - computer-use: Bite Alarm 제품 UI 활성화와 프레임 대기 상태의 시작/정지,
   의존 서비스 종료 순서 및 앱 정상 종료 확인.
+- Windows UI Automation: Auto Pilking 기본 우클릭, 3.0초 누름/해제,
+  누름/해제 spinner의 3.0→3.1→3.0 변화, A 선택→우클릭 복원,
+  활성화된 Feature 버튼과 정상 종료 확인.
+- Auto Pilking: 기본 설정/범위 검증, 단일 키 전달, 실행 취소 전달 및 JSON 이전/왕복 테스트.
+- Windows: 임시 WPF 창에서 실제 `SendInput` 우클릭/F24의 down과 up 수신 확인.
 - 사용자 실물 검증: Metronome 소리/BPM/음량, 다른 창에서 물리 단축키 시작/정지,
   Tray 열기/Toggle/종료가 정상 동작함.
 - 사용자 실제 RF4 검증: 본체 실행 후 프레임 수가 안정적으로 증가하고,
@@ -80,7 +88,9 @@
 - 원격 Steam 스트리밍은 제목이 실제 게임을 증명하지 않아 자동 연결하지 않는다.
 - Bite Alarm의 반복 간격/음량/연속 프레임 수는 아직 제품 설정 UI에 노출되지 않음.
 - POSITIVE 표본이 1장이므로 다른 환경의 실제 포획 UI에서 threshold 보정 가능성이 있음.
-- Auto Pilking은 미구현.
+- Auto Pilking 공식 일반 정책은 bot/macro를 금지한다. 이 빌드의 실제 게임 사용 근거는
+  사용자가 밝힌 별도 허락이며 그 허락의 적용 범위는 프로그램이 독립적으로 검증하지 못한다.
+- 실제 `SendInput` down/up은 임시 WPF 창에서 검증했다. RF4에서의 입력 수신과 누름 중 정지는 실물 검증 대기.
 - Hotkey는 다른 프로그램에 키를 전달하며 다른 앱의 binding 충돌을 조회하지 않는다.
 - Hook timeout에 따른 Windows의 조용한 해제는 플랫폼 제약.
 - 모든 injected 입력을 제외하므로 일부 접근성 도구/원격 입력도 물리 활동으로 처리되지 않을 수 있음.
@@ -95,5 +105,5 @@
 1. 실제 RF4 포획 상황에서 Bite Alarm을 검증하고 POSITIVE 샘플을 추가 수집해 threshold 보정.
 2. 반복 간격/음량/연속 프레임 수와 소멸 확인 옵션을 사용자 설정/UI에 노출.
 3. 실제 RF4에서 남은 창 resize/재실행/최소화/HDR 호환성 항목을 검증하고 수정.
-4. Auto Pilking은 실제 구현 직전에 최신 공식 운영정책을 조사하고 출처/날짜 기록.
-   불허 또는 허용 범위가 확인되지 않으면 자동 입력을 구현하지 않음.
+4. 별도 허락 범위 안에서 실제 RF4가 우클릭/선택 키의 down/up을 수신하는지와
+   누름 중 정지 시 즉시 해제되는지 검증.

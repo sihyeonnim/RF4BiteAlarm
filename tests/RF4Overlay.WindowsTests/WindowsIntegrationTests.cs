@@ -10,6 +10,10 @@ using RF4Overlay.Infrastructure.Input;
 using RF4Overlay.Infrastructure.Settings;
 using RF4Overlay.Core.Settings;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Windows.Controls;
+using System.Windows.Input;
+using RF4Overlay.Core.Input;
 
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 namespace RF4Overlay.WindowsTests;
@@ -64,6 +68,51 @@ public sealed class WindowsIntegrationTests
         await Task.WhenAll(monitor.DisposeAsync().AsTask(), monitor.DisposeAsync().AsTask()).WaitAsync(TimeSpan.FromSeconds(5));
         await Assert.ThrowsAsync<ObjectDisposedException>(() => monitor.StartAsync());
     }
+
+    [Fact]
+    public Task SendInputHoldsAndReleasesRightMouseAndSingleKey() => OnDesktop(async () =>
+    {
+        var surface = new Border { Width = 240, Height = 160, Background = Brushes.DarkSlateGray, Focusable = true };
+        var window = new Window
+        {
+            Title = "RF4 input automation target", Width = 260, Height = 190,
+            Left = 80, Top = 80, Content = surface, ShowInTaskbar = false, Topmost = true
+        };
+        var rightDown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rightUp = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var keyDown = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var keyUp = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        surface.PreviewMouseRightButtonDown += (_, _) => rightDown.TrySetResult();
+        surface.PreviewMouseRightButtonUp += (_, _) => rightUp.TrySetResult();
+        surface.PreviewKeyDown += (_, args) => { if (args.Key == Key.F24) keyDown.TrySetResult(); };
+        surface.PreviewKeyUp += (_, args) => { if (args.Key == Key.F24) keyUp.TrySetResult(); };
+        GetCursorPos(out var original);
+        try
+        {
+            window.Show();
+            window.Activate();
+            surface.Focus();
+            var point = surface.PointToScreen(new Point(40, 40));
+            Assert.True(SetCursorPos((int)point.X, (int)point.Y));
+            await Task.Delay(100);
+            var automation = new WindowsInputAutomation();
+            using var cancelHold = new CancellationTokenSource();
+            var mouseHold = automation.HoldAsync(AutomationInput.MouseRight, TimeSpan.FromSeconds(10), cancelHold.Token);
+            await rightDown.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await cancelHold.CancelAsync();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => mouseHold);
+            await rightUp.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            surface.Focus();
+            await automation.HoldAsync(AutomationInput.Keyboard(0x87), TimeSpan.FromSeconds(0.1), CancellationToken.None);
+            await Task.WhenAll(keyDown.Task, keyUp.Task).WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            SetCursorPos(original.X, original.Y);
+            window.Close();
+        }
+    });
 
     [Fact]
     public void AudioVoiceCreatesPlaysSilentlyAndReleases()
@@ -140,4 +189,8 @@ public sealed class WindowsIntegrationTests
         thread.Start();
         return done.Task.WaitAsync(TimeSpan.FromSeconds(30));
     }
+
+    [StructLayout(LayoutKind.Sequential)] private struct NativePoint { public int X, Y; }
+    [DllImport("user32.dll")] private static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
 }

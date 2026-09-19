@@ -41,7 +41,8 @@ OS auto-repeat은 눌린 키 집합으로 제외한다. 입력 queue 포화 시 
 - Hook 관찰 → matcher → bounded 명령 queue → 공통 runtime.
 - 실제 키 기록 UI에서는 전역 명령을 일시 중단하고 최대 8개 키를 기록.
 - 입력 내용은 디스크/네트워크에 기록하지 않음. 저장되는 것은 사용자가 지정한 binding뿐.
-- 사용자 입력 관찰과 IInputAutomation 계약은 분리. 자동 입력 구현 없음.
+- 사용자 입력 관찰과 IInputAutomation 계약/Windows `SendInput` 구현은 분리한다.
+  자동 입력은 우클릭 또는 modifier 없는 단일 keyboard key만 표현하며, 취소 중에도 up 이벤트를 보장한다.
 
 공식 근거 (2026-09-15 확인):
 [LowLevelKeyboardProc](https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc),
@@ -120,6 +121,17 @@ FishCaughtIconDetector는 제공된 1920×1080 자료의 normalized ROI
 
 ## Auto Pilking
 
-현재 구조와 안내만 유지한다. 실제 자동화 시작 전 RF4 최신 공식 정책의 허용 범위를 확인하고
-확인일/출처를 기록한다. 정책상 불허하거나 허용 여부가 확인되지 않으면 입력 자동화를 구현하지 않는다.
-탐지 회피나 자동화 은폐는 구현하지 않는다.
+AutoPilkingFeature는 각 주기 시작 시 thread-safe 설정 snapshot을 읽고 `IInputAutomation.HoldAsync`로
+입력을 누른 뒤 release 시간만큼 기다린다. 기본값은 우클릭, 3.0초 누름/3.0초 해제다.
+keyboard 선택지는 modifier 조합이나 sequence가 아닌 단일 키만 허용한다. UI의 위/아래 버튼은
+0.1초씩 조절하며 유효 범위는 0.1–60초다. UI, Tray, Hotkey는 다른 Feature와 동일하게
+FeatureCommandDispatcher를 사용한다. 고정 주기만 제공하며 무작위화, 탐지 회피, 은폐 기능은 없다.
+
+WindowsInputAutomation은 `SendInput`으로 right-button/key down을 보낸 뒤 대기하며, 정상 완료와 취소
+모두 `finally`에서 대응하는 up을 보낸다. 입력 관찰 hook은 Windows injected flag를 확인하므로 이 입력을
+사용자 활동이나 전역 단축키로 다시 처리하지 않는다.
+
+운영정책 확인일: 2026-09-19. [RF4 Terms of Use](https://store.steampowered.com/eula/766570_eula_0)는
+게임상 이득을 위한 bot/cheating program 사용을 금지하고, [공식 2019 공지](https://store.steampowered.com/news/posts/?appids=766570HELP&enddate=1560531147)는
+bot, cheat software, macro를 제재 대상으로 열거한다. 사용자는 이 실험에 별도 허락을 받았다고 명시했다.
+구현 범위는 그 진술을 전제로 한 로컬 고정 입력 반복이며, 프로그램은 허락의 범위를 검증하지 않는다.

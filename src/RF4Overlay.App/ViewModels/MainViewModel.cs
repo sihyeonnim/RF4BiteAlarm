@@ -7,6 +7,7 @@ using RF4Overlay.Core.Features;
 using RF4Overlay.Core.Input;
 using RF4Overlay.Core.Settings;
 using RF4Overlay.Features.Metronome;
+using RF4Overlay.Features.AutoPilking;
 
 namespace RF4Overlay.App.ViewModels;
 
@@ -37,16 +38,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly FeatureCommandDispatcher _runtime;
     private readonly Dispatcher _ui = Dispatcher.CurrentDispatcher;
     private readonly MetronomeSettings _settings;
+    private readonly AutoPilkingSettings _autoSettings;
     private readonly Action<IReadOnlyList<HotkeyBinding>> _apply;
     private readonly Action<UserSettings> _save;
     private readonly Dictionary<FeatureId, HotkeySetting> _hotkeys;
     private readonly List<KeyStroke> _recorded = [];
     private FeatureId? _recording;
     private string _notice = "", _inputStatus = "전역 입력 준비 중", _connectionStatus = "RF4 연결: 캡처 준비 전";
-    private string _bpmText, _periodText, _gapText = "500";
+    private string _bpmText, _periodText, _holdText, _releaseText, _gapText = "500";
+    private AutomationInputOption _selectedAutoInput;
     public event EventHandler? RecordingChanged;
     public IReadOnlyList<FeatureViewModel> Features { get; }
     public AsyncCommand CancelRecordingCommand { get; }
+    public AsyncCommand IncreaseHoldCommand { get; }
+    public AsyncCommand DecreaseHoldCommand { get; }
+    public AsyncCommand IncreaseReleaseCommand { get; }
+    public AsyncCommand DecreaseReleaseCommand { get; }
+    public IReadOnlyList<AutomationInputOption> AutoInputOptions { get; } = CreateAutoInputOptions();
     public bool IsRecording => _recording is not null;
     public string Notice { get => _notice; set { _notice = value; Changed(); } }
     public string InputStatus { get => _inputStatus; set { _inputStatus = value; Changed(); } }
@@ -91,19 +99,64 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         set { _settings.Volume = (float)Math.Clamp(value / 100, 0, 1); Changed(); SaveSettings(); }
     }
     public string GapText { get => _gapText; set { _gapText = value; Changed(); } }
+    public AutomationInputOption SelectedAutoInput
+    {
+        get => _selectedAutoInput;
+        set
+        {
+            if (value is null || value == _selectedAutoInput) return;
+            _selectedAutoInput = value;
+            _autoSettings.Input = value.Input;
+            Changed(); SaveSettings(); Notice = "Auto Pilking 입력을 적용했습니다.";
+        }
+    }
+    public string HoldText
+    {
+        get => _holdText;
+        set
+        {
+            _holdText = value; Changed();
+            if (TryAutoSeconds(value, out var seconds))
+            {
+                _autoSettings.HoldSeconds = seconds; SaveSettings(); Notice = "누름 시간을 적용했습니다.";
+            }
+            else Notice = "누름 시간은 0.1–60초 사이의 숫자로 입력하세요.";
+        }
+    }
+    public string ReleaseText
+    {
+        get => _releaseText;
+        set
+        {
+            _releaseText = value; Changed();
+            if (TryAutoSeconds(value, out var seconds))
+            {
+                _autoSettings.ReleaseSeconds = seconds; SaveSettings(); Notice = "떼는 시간을 적용했습니다.";
+            }
+            else Notice = "떼는 시간은 0.1–60초 사이의 숫자로 입력하세요.";
+        }
+    }
 
-    public MainViewModel(FeatureCommandDispatcher runtime, MetronomeSettings settings, IEnumerable<HotkeySetting> hotkeys,
+    public MainViewModel(FeatureCommandDispatcher runtime, MetronomeSettings settings, AutoPilkingSettings autoSettings,
+        IEnumerable<HotkeySetting> hotkeys,
         Action<IReadOnlyList<HotkeyBinding>> apply, Action<UserSettings> save)
     {
-        _runtime = runtime; _settings = settings; _apply = apply; _save = save;
+        _runtime = runtime; _settings = settings; _autoSettings = autoSettings; _apply = apply; _save = save;
         _bpmText = FormatNumber(settings.Bpm); _periodText = FormatNumber(settings.PeriodSeconds);
+        _holdText = FormatNumber(autoSettings.HoldSeconds); _releaseText = FormatNumber(autoSettings.ReleaseSeconds);
+        _selectedAutoInput = AutoInputOptions.Single(option => option.Input == autoSettings.Input);
         _hotkeys = hotkeys.ToDictionary(h => h.Feature);
         Features = runtime.GetStatuses().Select(s => new FeatureViewModel(s, runtime, () => RecordOrSave(s.Id))).ToArray();
         CancelRecordingCommand = new(() => { CancelRecording(); return Task.CompletedTask; });
+        IncreaseHoldCommand = StepCommand(true, 0.1);
+        DecreaseHoldCommand = StepCommand(true, -0.1);
+        IncreaseReleaseCommand = StepCommand(false, 0.1);
+        DecreaseReleaseCommand = StepCommand(false, -0.1);
         apply(Snapshot().Bindings()); RefreshHotkeyText();
         runtime.StatusChanged += OnStatusChanged;
     }
-    private UserSettings Snapshot() => new(_settings.Bpm, _settings.Volume, _hotkeys.Values.ToArray(), _settings.PeriodSeconds);
+    private UserSettings Snapshot() => new(_settings.Bpm, _settings.Volume, _hotkeys.Values.ToArray(), _settings.PeriodSeconds,
+        new(_autoSettings.Input, _autoSettings.HoldSeconds, _autoSettings.ReleaseSeconds));
     public void SaveSettings() => _save(Snapshot());
     private void RecordOrSave(FeatureId id)
     {
@@ -114,7 +167,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 if (_recorded.Count == 0) throw new ArgumentException("키를 한 번 이상 입력하세요.");
                 if (!int.TryParse(GapText, out var gap) || gap is < 100 or > 5000) throw new ArgumentException("키 간격은 100–5000ms입니다.");
                 var candidate = _hotkeys.Values.Where(h => h.Feature != id).Append(new(id, _recorded.ToArray(), gap)).ToArray();
-                var settings = new UserSettings(_settings.Bpm, _settings.Volume, candidate, _settings.PeriodSeconds);
+                var settings = new UserSettings(_settings.Bpm, _settings.Volume, candidate, _settings.PeriodSeconds,
+                    new(_autoSettings.Input, _autoSettings.HoldSeconds, _autoSettings.ReleaseSeconds));
                 settings.Validate(); _apply(settings.Bindings());
                 _hotkeys[id] = candidate.Last();
                 CancelRecording(); SaveSettings(); Notice = "단축키를 저장했습니다.";
@@ -152,10 +206,38 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         KeyInterop.KeyFromVirtualKey(stroke.VirtualKey);
     private static bool TryNumber(string value, out double number) =>
         double.TryParse(value, NumberStyles.Float, CultureInfo.CurrentCulture, out number);
+    private static bool TryAutoSeconds(string value, out double number) =>
+        TryNumber(value, out number) && number is >= AutoPilkingSettings.MinimumSeconds and <= AutoPilkingSettings.MaximumSeconds;
     private static string FormatNumber(double value) => value.ToString("0.###", CultureInfo.CurrentCulture);
+    private AsyncCommand StepCommand(bool hold, double delta) => new(() =>
+    {
+        var current = hold ? _autoSettings.HoldSeconds : _autoSettings.ReleaseSeconds;
+        var next = Math.Round(Math.Clamp(current + delta, AutoPilkingSettings.MinimumSeconds, AutoPilkingSettings.MaximumSeconds), 1);
+        if (hold) HoldText = FormatNumber(next); else ReleaseText = FormatNumber(next);
+        return Task.CompletedTask;
+    });
+    private static IReadOnlyList<AutomationInputOption> CreateAutoInputOptions()
+    {
+        var options = new List<AutomationInputOption> { new("마우스 우클릭", AutomationInput.MouseRight) };
+        options.AddRange(Enumerable.Range('A', 26).Select(key => new AutomationInputOption(((char)key).ToString(), AutomationInput.Keyboard((byte)key))));
+        options.AddRange(Enumerable.Range('0', 10).Select(key => new AutomationInputOption(((char)key).ToString(), AutomationInput.Keyboard((byte)key))));
+        options.AddRange(Enumerable.Range(0, 10).Select(key => new AutomationInputOption($"NumPad {key}", AutomationInput.Keyboard((byte)(0x60 + key)))));
+        options.Add(new("Space", AutomationInput.Keyboard(0x20)));
+        options.Add(new("Enter", AutomationInput.Keyboard(0x0D)));
+        options.Add(new("왼쪽 화살표", AutomationInput.Keyboard(0x25)));
+        options.Add(new("위쪽 화살표", AutomationInput.Keyboard(0x26)));
+        options.Add(new("오른쪽 화살표", AutomationInput.Keyboard(0x27)));
+        options.Add(new("아래쪽 화살표", AutomationInput.Keyboard(0x28)));
+        return options;
+    }
     private void OnStatusChanged(object? sender, FeatureStatus status) =>
         _ui.BeginInvoke(() => Features.Single(f => f.Id == status.Id).Update(status));
     public void Dispose() => _runtime.StatusChanged -= OnStatusChanged;
+}
+
+public sealed record AutomationInputOption(string Name, AutomationInput Input)
+{
+    public override string ToString() => Name;
 }
 
 public sealed class FeatureViewModel : ObservableObject

@@ -6,6 +6,7 @@ using RF4Overlay.Core.Input;
 using RF4Overlay.Core.Settings;
 using RF4Overlay.Features;
 using RF4Overlay.Features.Metronome;
+using RF4Overlay.Features.AutoPilking;
 using RF4Overlay.Infrastructure.Audio;
 using RF4Overlay.Infrastructure.Input;
 using RF4Overlay.Infrastructure.Settings;
@@ -41,9 +42,18 @@ public partial class MainWindow : Window
         try { saved = _store.Load(); }
         catch (Exception error) { saved = UserSettings.Default; warning = "설정을 읽지 못해 기본값을 사용합니다: " + error.Message; }
         var settings = new MetronomeSettings { PeriodSeconds = saved.EffectivePeriodSeconds, Volume = saved.Volume };
-        _runtime = new(FeatureCatalog.Create(new AudioService(), settings, _input, _capture));
+        var autoSaved = saved.EffectiveAutoPilking;
+        var autoSettings = new AutoPilkingSettings
+        {
+            Input = autoSaved.Input,
+            HoldSeconds = autoSaved.HoldSeconds,
+            ReleaseSeconds = autoSaved.ReleaseSeconds
+        };
+        _runtime = new(FeatureCatalog.Create(new AudioService(), settings, _input, _capture,
+            new WindowsInputAutomation(), autoSettings));
         _hotkeys = new(_input, _runtime);
-        _viewModel = new(_runtime, settings, saved.Hotkeys, bindings => _hotkeys.SetBindings(bindings), PersistSettings);
+        _viewModel = new(_runtime, settings, autoSettings, saved.Hotkeys,
+            bindings => _hotkeys.SetBindings(bindings), PersistSettings);
         DataContext = _viewModel;
         _store.SaveFailed += (_, message) => Dispatcher.BeginInvoke(() => _viewModel.Notice = "설정 저장 실패: " + message);
         _capture.StatusChanged += (_, status) => Dispatcher.BeginInvoke(() =>

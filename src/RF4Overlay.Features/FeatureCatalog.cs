@@ -11,11 +11,11 @@ namespace RF4Overlay.Features;
 public static class FeatureCatalog
 {
     public static IReadOnlyList<IFeature> Create(IAudioService audio, MetronomeSettings settings) =>
-        [new UnavailableBiteAlarmFeature(), new MetronomeFeature(audio, settings), new AutoPilkingFeature()];
+        [new UnavailableBiteAlarmFeature(), new MetronomeFeature(audio, settings), new UnavailableAutoPilkingFeature()];
 
     public static IReadOnlyList<IFeature> Create(IAudioService audio, MetronomeSettings settings,
-        IUserInputSource input, ICaptureFrameSource frames) =>
+        IUserInputSource input, ICaptureFrameSource frames, IInputAutomation automation, AutoPilkingSettings autoSettings) =>
         [new BiteAlarmFeature(audio, input, frames, () => new FishCaughtIconDetector(),
                 new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(0.5))),
-            new MetronomeFeature(audio, settings), new AutoPilkingFeature()];
+            new MetronomeFeature(audio, settings), new AutoPilkingFeature(automation, autoSettings)];
 }

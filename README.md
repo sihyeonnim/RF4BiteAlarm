@@ -9,10 +9,10 @@ Windows용 C# / .NET 10 / WPF RF4 보조 플랫폼입니다.
 - 단일 키, modifier 조합, 반복/혼합 key sequence 기록 및 저장.
 - RF4 본체 창 자동 탐색과 Windows Graphics Capture 진단.
 - Bite Alarm: 정규화 ROI에서 물고기 포획 아이콘을 감지하고 반복 알람 재생.
-- Auto Pilking은 사용 불가. 자동 입력 구현은 없음.
+- Auto Pilking: 우클릭 또는 단일 keyboard key를 설정한 누름/해제 시간으로 반복.
 
-기본 단축키는 Bite Alarm **Ctrl+F9**, Metronome **Ctrl+F8**입니다. Auto Pilking의
-Ctrl+F10은 예약되어 있으나 기능은 아직 사용 불가입니다. 단축키는 원래 앱에도 전달됩니다.
+기본 단축키는 Bite Alarm **Ctrl+F9**, Metronome **Ctrl+F8**, Auto Pilking **Ctrl+F10**입니다.
+단축키는 원래 앱에도 전달됩니다.
 
 '키 기록'을 클릭하고 원하는 키/조합을 차례로 누른 뒤 '저장'을 클릭합니다.
 NumPad1 세 번도 가능합니다. 같은 기능의 키 사이 제한은 100–5000ms로 설정합니다.
@@ -21,6 +21,7 @@ NumPad1 세 번도 가능합니다. 같은 기능의 키 사이 제한은 100–
 창 X 버튼은 Tray로 숨깁니다. 완전 종료는 '프로그램 종료' 또는 Tray의 '종료'입니다.
 설정은 사용자 LocalApplicationData/RF4Overlay/settings.json에 자동 저장됩니다.
 주기와 BPM은 `BPM = 60 / 주기(초)`로 서로 연동되며, 소수 주기도 그대로 저장됩니다.
+Auto Pilking 기본값은 우클릭 3.0초 누름/3.0초 해제이며, 각 시간은 0.1초 단위로 조절합니다.
 
 ## 개발 및 실행
 
@@ -42,8 +43,8 @@ dotnet run --project src/RF4Overlay.App
 | --- | --- |
 | App | WPF 셸, ViewModel, 설정/서비스 조립 |
 | Core | Feature runtime, 공통 계약, 순수 Hotkey matcher |
-| Infrastructure | Windows 입력, Tray, Audio, WGC, 설정 파일 |
-| Features | Metronome, Bite Alarm 준비, Auto Pilking placeholder |
+| Infrastructure | Windows 입력 관찰/자동화, Tray, Audio, WGC, 설정 파일 |
+| Features | Metronome, Bite Alarm, Auto Pilking |
 | Tests | Windows API 없는 로직 테스트 |
 | WindowsTests | 실제 Windows 캡처/장치/파일 통합 검증 |
 
