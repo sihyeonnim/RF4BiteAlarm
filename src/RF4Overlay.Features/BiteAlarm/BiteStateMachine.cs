@@ -56,9 +56,14 @@ public sealed class BiteStateMachine
     }
     public bool Acknowledge()
     {
-        if (State != BiteState.Alerting) return false;
-        State = BiteState.WaitingForDisappearance;
-        _absentSince = null;
-        return true;
+        if (State == BiteState.Alerting)
+        {
+            State = BiteState.WaitingForDisappearance;
+            _absentSince = null;
+            return true;
+        }
+        // Input used to close a temporary overlay must invalidate absence observed behind it.
+        if (State == BiteState.WaitingForDisappearance) _absentSince = null;
+        return false;
     }
 }

@@ -81,3 +81,11 @@ public interface ILeftButtonHoldAutomation
 {
     ValueTask<IAsyncDisposable> HoldLeftButtonAsync(bool withShift, CancellationToken cancellationToken);
 }
+
+/// <summary>Reports whether the native RF4 game window is currently in the foreground.</summary>
+public interface IGameForegroundGate
+{
+    bool IsForeground { get; }
+    Task WaitUntilForegroundAsync(CancellationToken cancellationToken);
+    Task WaitUntilBackgroundAsync(CancellationToken cancellationToken);
+}

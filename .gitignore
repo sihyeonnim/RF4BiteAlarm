@@ -7,3 +7,6 @@ TestResults/
 *.log
 .env
 artifacts/
+.artifacts/
+RF4-Bite-Alram/
+feature-announcements-preview.wav

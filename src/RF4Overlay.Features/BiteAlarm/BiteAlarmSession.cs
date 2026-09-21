@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using RF4Overlay.Core.Audio;
 using RF4Overlay.Core.Capture;
 using RF4Overlay.Core.Input;
@@ -6,7 +6,7 @@ using RF4Overlay.Core.Input;
 namespace RF4Overlay.Features.BiteAlarm;
 
 /// <summary>Detector-independent alarm loop; not enabled in the catalog until actual detector data exists.</summary>
-public sealed class BiteAlarmSession(IAudioService audio, IUserInputSource input, BiteAlarmOptions options)
+public sealed class BiteAlarmSession(IAudioService audio, IUserInputSource input, BiteAlarmOptions options, BiteAlarmSettings? settings = null)
 {
     private int _running;
     public async Task RunAsync(IAsyncEnumerable<CapturedFrame> frames, IBiteDetector detector, CancellationToken cancellationToken)
@@ -23,12 +23,17 @@ public sealed class BiteAlarmSession(IAudioService audio, IUserInputSource input
             var active = true;
             Exception? inputError = null;
             state.Start();
+            void PlayAlarm()
+            {
+                var current = settings?.Current;
+                voice.Play(current?.Sound ?? SoundCue.Alarm, current?.Volume ?? options.Volume);
+            }
             void OnInput(object? sender, UserInput activity)
             {
                 lock (sync)
                 {
                     if (!active || linked.IsCancellationRequested) return;
-                    try { if (state.Acknowledge()) voice.Stop(); }
+                    try { state.Acknowledge(); }
                     catch (Exception error) { inputError = error; linked.Cancel(); }
                 }
             }
@@ -43,7 +48,7 @@ public sealed class BiteAlarmSession(IAudioService audio, IUserInputSource input
                         lock (sync)
                         {
                             if (!active || linked.IsCancellationRequested) return;
-                            if (state.Observe(observation, clock.Elapsed)) voice.Play(SoundCue.Alarm, options.Volume);
+                            if (state.Observe(observation, clock.Elapsed)) PlayAlarm();
                         }
                     }
                     linked.Token.ThrowIfCancellationRequested();
@@ -61,7 +66,7 @@ public sealed class BiteAlarmSession(IAudioService audio, IUserInputSource input
                         lock (sync)
                         {
                             if (active && !linked.IsCancellationRequested && state.Tick(clock.Elapsed))
-                                voice.Play(SoundCue.Alarm, options.Volume);
+                                PlayAlarm();
                         }
                     }
                 }

@@ -1,4 +1,5 @@
-﻿using NAudio.Wave;
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using RF4Overlay.Core.Audio;
 
 namespace RF4Overlay.Infrastructure.Audio;
@@ -36,13 +37,38 @@ public sealed class AudioService : IAudioService
         private int _position, _length;
         private float _volume;
         private double _frequency;
+        private float[]? _clip;
+        private static readonly Lazy<IReadOnlyDictionary<SoundCue, float[]>> Clips = new(LoadClips);
+        private static IReadOnlyDictionary<SoundCue, float[]> LoadClips()
+        {
+            var result = new Dictionary<SoundCue, float[]>();
+            foreach (var (cue, file) in new[] { (SoundCue.Sound8, "sound8.wav"), (SoundCue.Sound0, "sound0.wav"),
+                (SoundCue.Sound9, "sound9.wav"), (SoundCue.TradeReceived, "체결수신1.wav") })
+            {
+                using var stream = typeof(AudioService).Assembly.GetManifestResourceStream("RF4Overlay.Infrastructure.Audio.Sounds." + file)
+                    ?? throw new InvalidOperationException("알람 소리 파일이 없습니다: " + file);
+                using var reader = new WaveFileReader(stream);
+                ISampleProvider samples = reader.ToSampleProvider();
+                if (samples.WaveFormat.Channels == 2) samples = new StereoToMonoSampleProvider(samples);
+                if (samples.WaveFormat.SampleRate != 44100) samples = new WdlResamplingSampleProvider(samples, 44100);
+                var decoded = new List<float>();
+                var buffer = new float[4096];
+                int count;
+                while ((count = samples.Read(buffer, 0, buffer.Length)) > 0) decoded.AddRange(buffer.AsSpan(0, count).ToArray());
+                result.Add(cue, decoded.ToArray());
+            }
+            return result;
+        }
         public WaveFormat WaveFormat { get; } = WaveFormat.CreateIeeeFloatWaveFormat(44100, 1);
         public void Trigger(SoundCue cue, float volume)
         {
             if (!float.IsFinite(volume) || volume is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(volume));
             lock (_sync)
             {
-                _position = 0; _length = cue == SoundCue.Tick ? 2205 : 17640;
+                // Do not interrupt a long alarm when the repeat timer fires.
+                if (cue != SoundCue.Tick && _position < _length) return;
+                _clip = cue is SoundCue.Tick or SoundCue.Alarm ? null : Clips.Value[cue];
+                _position = 0; _length = _clip?.Length ?? (cue == SoundCue.Tick ? 2205 : 17640);
                 _frequency = cue == SoundCue.Tick ? 1200 : 880; _volume = volume;
             }
         }
@@ -56,8 +82,12 @@ public sealed class AudioService : IAudioService
                     float sample = 0;
                     if (_position < _length)
                     {
+                        if (_clip is not null) sample = _clip[_position++] * _volume;
+                        else
+                        {
                         var envelope = Math.Min(1d, _position / 100d) * (1d - (double)_position / _length);
                         sample = (float)(Math.Sin(2 * Math.PI * _frequency * _position++ / 44100) * envelope * _volume * 0.5);
+                        }
                     }
                     buffer[offset + i] = sample;
                 }

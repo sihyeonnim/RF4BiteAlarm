@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Globalization;
 using System.Windows.Input;
@@ -6,8 +6,11 @@ using System.Windows.Threading;
 using RF4Overlay.Core.Features;
 using RF4Overlay.Core.Input;
 using RF4Overlay.Core.Settings;
+using RF4Overlay.Core.Audio;
+using RF4Overlay.Features.BiteAlarm;
 using RF4Overlay.Features.Metronome;
 using RF4Overlay.Features.AutoPilking;
+using RF4Overlay.Features.LeftClickHold;
 
 namespace RF4Overlay.App.ViewModels;
 
@@ -39,6 +42,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private readonly Dispatcher _ui = Dispatcher.CurrentDispatcher;
     private readonly MetronomeSettings _settings;
     private readonly AutoPilkingSettings _autoSettings;
+    private readonly BiteAlarmSettings _biteSettings;
+    private readonly VoiceAnnouncementSettings _voiceSettings;
+    private readonly LeftClickHoldSettings _leftClickSettings;
+    private readonly IAudioService _audio;
+    private IAudioVoice? _alarmPreview;
+    public AsyncCommand TestAlarmCommand { get; }
     private readonly Action<IReadOnlyList<HotkeyBinding>> _apply;
     private readonly Action<UserSettings> _save;
     private readonly Dictionary<FeatureId, HotkeySetting> _hotkeys;
@@ -47,6 +56,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private string _notice = "", _inputStatus = "전역 입력 준비 중", _connectionStatus = "RF4 연결: 캡처 준비 전";
     private string _bpmText, _periodText, _holdText, _releaseText, _gapText = "500";
     private AutomationInputOption _selectedAutoInput;
+    private bool _isPeriodMode = true;
     public event EventHandler? RecordingChanged;
     public IReadOnlyList<FeatureViewModel> Features { get; }
     public AsyncCommand CancelRecordingCommand { get; }
@@ -98,6 +108,59 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         get => _settings.Volume * 100;
         set { _settings.Volume = (float)Math.Clamp(value / 100, 0, 1); Changed(); SaveSettings(); }
     }
+    public IReadOnlyList<AlarmSoundOption> AlarmSounds { get; } =
+    [new("Default", SoundCue.Alarm), new("알람 1", SoundCue.Sound8), new("알람 2", SoundCue.Sound0),
+     new("알람 3", SoundCue.Sound9), new("알람 4", SoundCue.TradeReceived)];
+    public SoundCue AlarmSound
+    {
+        get => _biteSettings.Current.Sound;
+        set { _biteSettings.Current = _biteSettings.Current with { Sound = value }; Changed(); SaveSettings(); }
+    }
+    public double AlarmVolume
+    {
+        get => _biteSettings.Current.Volume * 100;
+        set { _biteSettings.Current = _biteSettings.Current with { Volume = (float)Math.Clamp(value / 100, 0, 1) }; Changed(); SaveSettings(); }
+    }
+    public bool VoiceAnnouncementEnabled
+    {
+        get => _voiceSettings.Current.Enabled;
+        set
+        {
+            _voiceSettings.Current = _voiceSettings.Current with { Enabled = value };
+            Changed(); SaveSettings();
+            Notice = value ? "음성 안내를 켰습니다." : "음성 안내를 껐습니다.";
+        }
+    }
+    public double VoiceAnnouncementVolume
+    {
+        get => _voiceSettings.Current.Volume;
+        set
+        {
+            _voiceSettings.Current = _voiceSettings.Current with { Volume = (int)Math.Round(Math.Clamp(value, 0, 100)) };
+            Changed(); SaveSettings();
+        }
+    }
+    public bool IsPeriodMode
+    {
+        get => _isPeriodMode;
+        set
+        {
+            if (_isPeriodMode == value) return;
+            _isPeriodMode = value;
+            Changed();
+            Changed(nameof(IsBpmMode));
+        }
+    }
+    public bool IsBpmMode
+    {
+        get => !_isPeriodMode;
+        set { if (value) IsPeriodMode = false; }
+    }
+    public bool ShiftLeftClickHold
+    {
+        get => _leftClickSettings.WithShift;
+        set { _leftClickSettings.WithShift = value; Changed(); SaveSettings(); }
+    }
     public string GapText { get => _gapText; set { _gapText = value; Changed(); } }
     public AutomationInputOption SelectedAutoInput
     {
@@ -138,9 +201,32 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
 
     public MainViewModel(FeatureCommandDispatcher runtime, MetronomeSettings settings, AutoPilkingSettings autoSettings,
+        BiteAlarmSettings biteSettings, VoiceAnnouncementSettings voiceSettings, LeftClickHoldSettings leftClickSettings,
         IEnumerable<HotkeySetting> hotkeys,
-        Action<IReadOnlyList<HotkeyBinding>> apply, Action<UserSettings> save)
+        Action<IReadOnlyList<HotkeyBinding>> apply, Action<UserSettings> save, IAudioService audio)
     {
+        _audio = audio;
+        _biteSettings = biteSettings;
+        _voiceSettings = voiceSettings;
+        _leftClickSettings = leftClickSettings;
+        TestAlarmCommand = new(() =>
+        {
+            try
+            {
+                _alarmPreview ??= _audio.CreateVoice();
+                _alarmPreview.Stop();
+                var selected = _biteSettings.Current;
+                _alarmPreview.Play(selected.Sound, selected.Volume);
+                Notice = "선택한 알람 소리를 한 번 재생합니다.";
+            }
+            catch (Exception error)
+            {
+                _alarmPreview?.Dispose();
+                _alarmPreview = null;
+                Notice = "알람 테스트 실패: " + error.Message;
+            }
+            return Task.CompletedTask;
+        });
         _runtime = runtime; _settings = settings; _autoSettings = autoSettings; _apply = apply; _save = save;
         _bpmText = FormatNumber(settings.Bpm); _periodText = FormatNumber(settings.PeriodSeconds);
         _holdText = FormatNumber(autoSettings.HoldSeconds); _releaseText = FormatNumber(autoSettings.ReleaseSeconds);
@@ -156,7 +242,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         runtime.StatusChanged += OnStatusChanged;
     }
     private UserSettings Snapshot() => new(_settings.Bpm, _settings.Volume, _hotkeys.Values.ToArray(), _settings.PeriodSeconds,
-        new(_autoSettings.Input, _autoSettings.HoldSeconds, _autoSettings.ReleaseSeconds));
+        new(_autoSettings.Input, _autoSettings.HoldSeconds, _autoSettings.ReleaseSeconds), BiteAlarm: _biteSettings.Current,
+        ShiftLeftClickHold: _leftClickSettings.WithShift, VoiceAnnouncement: _voiceSettings.Current,
+        SettingsFormatVersion: UserSettings.CurrentSettingsFormatVersion);
     public void SaveSettings() => _save(Snapshot());
     private void RecordOrSave(FeatureId id)
     {
@@ -168,7 +256,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 if (!int.TryParse(GapText, out var gap) || gap is < 100 or > 5000) throw new ArgumentException("키 간격은 100–5000ms입니다.");
                 var candidate = _hotkeys.Values.Where(h => h.Feature != id).Append(new(id, _recorded.ToArray(), gap)).ToArray();
                 var settings = new UserSettings(_settings.Bpm, _settings.Volume, candidate, _settings.PeriodSeconds,
-                    new(_autoSettings.Input, _autoSettings.HoldSeconds, _autoSettings.ReleaseSeconds));
+                    new(_autoSettings.Input, _autoSettings.HoldSeconds, _autoSettings.ReleaseSeconds), BiteAlarm: _biteSettings.Current,
+                    ShiftLeftClickHold: _leftClickSettings.WithShift, VoiceAnnouncement: _voiceSettings.Current,
+                    SettingsFormatVersion: UserSettings.CurrentSettingsFormatVersion);
                 settings.Validate(); _apply(settings.Bindings());
                 _hotkeys[id] = candidate.Last();
                 CancelRecording(); SaveSettings(); Notice = "단축키를 저장했습니다.";
@@ -232,8 +322,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
     private void OnStatusChanged(object? sender, FeatureStatus status) =>
         _ui.BeginInvoke(() => Features.Single(f => f.Id == status.Id).Update(status));
-    public void Dispose() => _runtime.StatusChanged -= OnStatusChanged;
+    public void Dispose()
+    {
+        _runtime.StatusChanged -= OnStatusChanged;
+        _alarmPreview?.Dispose();
+        _alarmPreview = null;
+    }
 }
+
+public sealed record AlarmSoundOption(string Name, SoundCue Sound);
 
 public sealed record AutomationInputOption(string Name, AutomationInput Input)
 {
@@ -243,9 +340,15 @@ public sealed record AutomationInputOption(string Name, AutomationInput Input)
 public sealed class FeatureViewModel : ObservableObject
 {
     private FeatureStatus _status;
-    private string _hotkeyText = "", _recordText = "키 기록";
+    private string _hotkeyText = "", _recordText = "⌨";
     public FeatureId Id => _status.Id;
     public string Name => _status.Name;
+    public bool IsMetronome => Id == FeatureId.Metronome;
+    public bool IsAutoPilking => Id == FeatureId.AutoPilking;
+    public bool IsBiteAlarm => Id == FeatureId.BiteAlarm;
+    public bool IsLeftClickHold => Id == FeatureId.LeftClickHold;
+    public bool HasSettings => IsMetronome || IsAutoPilking || IsBiteAlarm || IsLeftClickHold;
+    public string SettingsAutomationName => Name + " 설정";
     public string Description => _status.Error ?? _status.Description;
     public string State => _status.State switch
     {
@@ -273,7 +376,7 @@ public sealed class FeatureViewModel : ObservableObject
     }
     public void SetHotkey(string text, bool recording)
     {
-        _hotkeyText = text.Length == 0 ? "키 입력 대기" : text; _recordText = recording ? "저장" : "키 기록";
+        _hotkeyText = text.Length == 0 ? "키 입력 대기" : text; _recordText = recording ? "✓" : "⌨";
         Changed(nameof(HotkeyText)); Changed(nameof(RecordText));
     }
     public void Update(FeatureStatus status)

@@ -14,17 +14,26 @@ public interface IFeature
     Task RunAsync(CancellationToken cancellationToken);
 }
 
+public interface IFeatureAnnouncement
+{
+    void Announce(FeatureId feature, bool running);
+}
+
 /// <summary>All entry points share this runtime. Commands serialize per feature; failures stay isolated.</summary>
 public sealed class FeatureCommandDispatcher : IAsyncDisposable
 {
     private readonly Dictionary<FeatureId, Entry> _entries;
+    private readonly IFeatureAnnouncement? _announcement;
     private readonly object _shutdownLock = new();
     private Task? _shutdown;
     private int _closing;
     public event EventHandler<FeatureStatus>? StatusChanged;
 
-    public FeatureCommandDispatcher(IEnumerable<IFeature> features) =>
+    public FeatureCommandDispatcher(IEnumerable<IFeature> features, IFeatureAnnouncement? announcement = null)
+    {
         _entries = features.ToDictionary(f => f.InitialStatus.Id, f => new Entry(f));
+        _announcement = announcement;
+    }
 
     public IReadOnlyList<FeatureStatus> GetStatuses() =>
         _entries.Values.Select(e => Volatile.Read(ref e.Status)).ToArray();
@@ -50,7 +59,8 @@ public sealed class FeatureCommandDispatcher : IAsyncDisposable
             if (stop)
             {
                 await StopAsync(entry).ConfigureAwait(false);
-                return new(entry.Status.State != FeatureState.Faulted, entry.Status.Error ?? "정지했습니다.");
+                var succeeded = entry.Status.State != FeatureState.Faulted;
+                return new(succeeded, entry.Status.Error ?? "정지했습니다.");
             }
             if (entry.Run is { IsCompleted: false }) return new(true, "이미 실행 중입니다.");
             entry.Cancellation?.Dispose();
@@ -77,6 +87,12 @@ public sealed class FeatureCommandDispatcher : IAsyncDisposable
         finally { entry.Gate.Release(); }
     }
 
+    private void Announce(FeatureId feature, bool running)
+    {
+        try { _announcement?.Announce(feature, running); }
+        catch (Exception error) { System.Diagnostics.Trace.TraceError(error.ToString()); }
+    }
+
     private async Task StopAsync(Entry entry)
     {
         if (entry.Run is { IsCompleted: false })
@@ -99,8 +115,14 @@ public sealed class FeatureCommandDispatcher : IAsyncDisposable
 
     private void SetStatus(Entry entry, FeatureState state, string? error = null)
     {
+        var previous = Volatile.Read(ref entry.Status).State;
         var status = entry.Feature.InitialStatus with { State = state, Error = error };
         Volatile.Write(ref entry.Status, status);
+        if (state == FeatureState.Running && previous != FeatureState.Running)
+            Announce(status.Id, true);
+        else if (state == FeatureState.Stopped && previous is FeatureState.Running or FeatureState.Stopping &&
+                 Volatile.Read(ref _closing) == 0)
+            Announce(status.Id, false);
         // Observer bugs cannot terminate a feature or prevent cleanup.
         foreach (EventHandler<FeatureStatus> handler in StatusChanged?.GetInvocationList() ?? [])
         {

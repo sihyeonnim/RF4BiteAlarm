@@ -8,6 +8,33 @@ namespace RF4Overlay.Tests;
 public sealed class SettingsTests
 {
     [Fact]
+    public void VoiceAnnouncementDefaultsAndRoundTripAreValid()
+    {
+        Assert.Equal(new VoiceAnnouncementSetting(true, 50), UserSettings.Default.EffectiveVoiceAnnouncement);
+        var settings = UserSettings.Default with { VoiceAnnouncement = new(false, 17) };
+        var copy = JsonSerializer.Deserialize<UserSettings>(JsonSerializer.Serialize(settings))!;
+        copy.Validate();
+        Assert.Equal(new VoiceAnnouncementSetting(false, 17), copy.EffectiveVoiceAnnouncement);
+        Assert.Throws<ArgumentException>(() => (settings with { VoiceAnnouncement = new(true, 101) }).Validate());
+    }
+
+    [Theory]
+    [InlineData(RF4Overlay.Core.Audio.SoundCue.Alarm)]
+    [InlineData(RF4Overlay.Core.Audio.SoundCue.Sound8)]
+    [InlineData(RF4Overlay.Core.Audio.SoundCue.Sound0)]
+    [InlineData(RF4Overlay.Core.Audio.SoundCue.Sound9)]
+    [InlineData(RF4Overlay.Core.Audio.SoundCue.TradeReceived)]
+    public void AlarmSelectionAndVolumeSurviveRestart(RF4Overlay.Core.Audio.SoundCue cue)
+    {
+        var settings = UserSettings.Default with { BiteAlarm = new(cue, 0.25f) };
+        var copy = JsonSerializer.Deserialize<UserSettings>(JsonSerializer.Serialize(settings))!;
+        copy.Validate();
+        Assert.Equal(settings.EffectiveBiteAlarm, copy.EffectiveBiteAlarm);
+        Assert.Throws<ArgumentException>(() => (settings with { BiteAlarm = new(cue, float.NaN) }).Validate());
+        Assert.Throws<ArgumentException>(() => (settings with { BiteAlarm = new(RF4Overlay.Core.Audio.SoundCue.Tick) }).Validate());
+    }
+
+    [Fact]
     public void SettingsRoundTripPreservesRepeatedKeysModifiersAndTiming()
     {
         var settings = new UserSettings(80, 0.3f,
@@ -52,9 +79,34 @@ public sealed class SettingsTests
     {
         var legacy = JsonSerializer.Deserialize<UserSettings>("""{"Bpm":150,"Volume":0.3,"Hotkeys":[]}""")!;
         legacy.Validate();
-        Assert.Null(legacy.PeriodSeconds);
+        Assert.Null(legacy.PeriodSeconds); Assert.Equal(new BiteAlarmSetting(), legacy.EffectiveBiteAlarm);
+        Assert.Equal(new VoiceAnnouncementSetting(true, 50), legacy.EffectiveVoiceAnnouncement);
         Assert.Equal(0.4, legacy.EffectivePeriodSeconds, 10);
         Assert.Equal(AutoPilkingSetting.Default, legacy.EffectiveAutoPilking);
+    }
+
+    [Fact]
+    public void ExistingDefaultVoiceVolumeMigratesFromThirtyThreeToFifty()
+    {
+        var legacy = JsonSerializer.Deserialize<UserSettings>("""{"Bpm":120,"Volume":0.5,"Hotkeys":[],"VoiceAnnouncement":{"Enabled":true,"Volume":33}}""")!;
+        Assert.Equal(new VoiceAnnouncementSetting(true, 50), legacy.EffectiveVoiceAnnouncement);
+
+        var current = legacy with
+        {
+            VoiceAnnouncement = legacy.EffectiveVoiceAnnouncement,
+            SettingsFormatVersion = UserSettings.CurrentSettingsFormatVersion
+        };
+        var copy = JsonSerializer.Deserialize<UserSettings>(JsonSerializer.Serialize(current))!;
+        Assert.Equal(new VoiceAnnouncementSetting(true, 50), copy.EffectiveVoiceAnnouncement);
+    }
+
+    [Fact]
+    public void ExistingDefaultAutoPilkingCycleMigratesToOneAndThreePointFiveSeconds()
+    {
+        var legacy = JsonSerializer.Deserialize<UserSettings>("""{"Bpm":120,"Volume":0.5,"Hotkeys":[],"AutoPilking":{"Input":{"Kind":0,"VirtualKey":0},"HoldSeconds":3,"ReleaseSeconds":3},"SettingsFormatVersion":1}""")!;
+        Assert.Equal(AutoPilkingSetting.Default, legacy.EffectiveAutoPilking);
+        Assert.Equal(1, legacy.EffectiveAutoPilking.HoldSeconds);
+        Assert.Equal(3.5, legacy.EffectiveAutoPilking.ReleaseSeconds);
     }
 
     [Fact]

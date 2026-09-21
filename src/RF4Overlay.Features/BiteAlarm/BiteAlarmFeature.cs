@@ -1,4 +1,4 @@
-﻿using RF4Overlay.Core.Features;
+using RF4Overlay.Core.Features;
 using RF4Overlay.Core.Audio;
 using RF4Overlay.Core.Capture;
 using RF4Overlay.Core.Input;
@@ -10,7 +10,7 @@ public sealed class BiteAlarmFeature(
     IUserInputSource input,
     ICaptureFrameSource frames,
     Func<IBiteDetector> detectorFactory,
-    BiteAlarmOptions options) : IFeature
+    BiteAlarmOptions options, BiteAlarmSettings? settings = null) : IFeature
 {
     public FeatureStatus InitialStatus { get; } = new(
         FeatureId.BiteAlarm,
@@ -19,7 +19,7 @@ public sealed class BiteAlarmFeature(
         "물고기 포획 아이콘을 감지해 반복 알람을 재생합니다.");
 
     public Task RunAsync(CancellationToken cancellationToken) =>
-        new BiteAlarmSession(audio, input, options)
+        new BiteAlarmSession(audio, input, options, settings)
             .RunAsync(frames.ReadFramesAsync(cancellationToken), detectorFactory(), cancellationToken);
 }
 

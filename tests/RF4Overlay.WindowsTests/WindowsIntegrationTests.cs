@@ -1,9 +1,10 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using RF4Overlay.Core.Audio;
 using RF4Overlay.Core.Capture;
+using RF4Overlay.Core.Features;
 using RF4Overlay.Infrastructure.Audio;
 using RF4Overlay.Infrastructure.Capture;
 using RF4Overlay.Infrastructure.Input;
@@ -23,6 +24,14 @@ namespace RF4Overlay.WindowsTests;
 /// <summary>Requires an unlocked interactive Windows desktop and WGC capable graphics device.</summary>
 public sealed class WindowsIntegrationTests
 {
+    [Fact]
+    public void VoiceVolumeDisplayFiftyPreservesPreviousOutputLevel()
+    {
+        Assert.Equal(0, FeatureAnnouncementService.ToOutputVolume(0));
+        Assert.Equal(33, FeatureAnnouncementService.ToOutputVolume(50));
+        Assert.Equal(100, FeatureAnnouncementService.ToOutputVolume(100));
+    }
+
     [Fact]
     public Task WgcCapturesOccludedWindowResizesAndReleasesOnClose() => OnDesktop(async () =>
     {
@@ -88,31 +97,48 @@ public sealed class WindowsIntegrationTests
         surface.PreviewMouseRightButtonUp += (_, _) => rightUp.TrySetResult();
         surface.PreviewKeyDown += (_, args) => { if (args.Key == Key.F24) keyDown.TrySetResult(); };
         surface.PreviewKeyUp += (_, args) => { if (args.Key == Key.F24) keyUp.TrySetResult(); };
-        GetCursorPos(out var original);
+        Assert.True(GetCursorPos(out var original), "Cannot access the desktop cursor. An unlocked interactive desktop is required.");
+        using var cancelHold = new CancellationTokenSource();
+        Task? mouseHold = null;
         try
         {
             window.Show();
-            window.Activate();
-            surface.Focus();
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+            Assert.True(window.Activate(), "Input test window could not be activated. An unlocked interactive desktop is required.");
+            Assert.True(surface.Focus(), "Input test surface could not receive keyboard focus.");
+            // Route real mouse input to this surface even if the physical pointer moves.
+            Assert.True(surface.CaptureMouse(), "Input test surface could not capture the mouse.");
             var point = surface.PointToScreen(new Point(40, 40));
             Assert.True(SetCursorPos((int)point.X, (int)point.Y));
-            await Task.Delay(100);
             var automation = new WindowsInputAutomation();
-            using var cancelHold = new CancellationTokenSource();
-            var mouseHold = automation.HoldAsync(AutomationInput.MouseRight, TimeSpan.FromSeconds(10), cancelHold.Token);
+            mouseHold = automation.HoldAsync(AutomationInput.MouseRight, TimeSpan.FromSeconds(10), cancelHold.Token);
             await rightDown.Task.WaitAsync(TimeSpan.FromSeconds(2));
             await cancelHold.CancelAsync();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => mouseHold);
             await rightUp.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
-            surface.Focus();
+            Assert.True(surface.Focus(), "Input test surface lost keyboard focus.");
             await automation.HoldAsync(AutomationInput.Keyboard(0x87), TimeSpan.FromSeconds(0.1), CancellationToken.None);
             await Task.WhenAll(keyDown.Task, keyUp.Task).WaitAsync(TimeSpan.FromSeconds(2));
         }
         finally
         {
-            SetCursorPos(original.X, original.Y);
-            window.Close();
+            // Await release before destroying the target, including when an assertion times out.
+            try
+            {
+                await cancelHold.CancelAsync();
+                if (mouseHold is not null)
+                {
+                    try { await mouseHold; }
+                    catch (OperationCanceledException) when (cancelHold.IsCancellationRequested) { }
+                }
+            }
+            finally
+            {
+                surface.ReleaseMouseCapture();
+                SetCursorPos(original.X, original.Y);
+                window.Close();
+            }
         }
     });
 
@@ -142,10 +168,19 @@ public sealed class WindowsIntegrationTests
     public void AudioVoiceCreatesPlaysSilentlyAndReleases()
     {
         using var voice = new AudioService().CreateVoice();
-        voice.Play(SoundCue.Tick, 0);
+        foreach (var cue in Enum.GetValues<SoundCue>()) { voice.Play(cue, 0); voice.Stop(); }
         voice.Play(SoundCue.Alarm, 0);
         voice.Stop();
     }
+
+    [Theory]
+    [InlineData(FeatureId.BiteAlarm, true, "Starting the bite alarm.")]
+    [InlineData(FeatureId.Metronome, false, "Stopping the metronome.")]
+    [InlineData(FeatureId.AutoPilking, true, "Starting auto pilking.")]
+    [InlineData(FeatureId.PictureInPicture, false, "Stopping picture in picture.")]
+    [InlineData(FeatureId.LeftClickHold, true, "Starting left-click hold.")]
+    public void FeatureAnnouncementUsesNaturalEnglish(FeatureId feature, bool running, string expected) =>
+        Assert.Equal(expected, FeatureAnnouncementService.MessageFor(feature, running));
 
     private static void AssertBlue(CapturedFrame frame)
     {

@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using System.Windows.Input;
 using RF4Overlay.App.ViewModels;
 using RF4Overlay.Core.Features;
@@ -7,6 +7,7 @@ using RF4Overlay.Core.Settings;
 using RF4Overlay.Features;
 using RF4Overlay.Features.Metronome;
 using RF4Overlay.Features.AutoPilking;
+using RF4Overlay.Features.LeftClickHold;
 using RF4Overlay.Infrastructure.Audio;
 using RF4Overlay.Infrastructure.Input;
 using RF4Overlay.Infrastructure.Settings;
@@ -22,6 +23,7 @@ namespace RF4Overlay.App;
 public partial class MainWindow : Window
 {
     private readonly FeatureCommandDispatcher _runtime;
+    private readonly FeatureAnnouncementService _announcements;
     private readonly WindowsInputMonitor _input = new();
     private readonly GlobalHotkeyService _hotkeys;
     private readonly SettingsStore _store = new();
@@ -51,16 +53,33 @@ public partial class MainWindow : Window
             HoldSeconds = autoSaved.HoldSeconds,
             ReleaseSeconds = autoSaved.ReleaseSeconds
         };
-        _runtime = new(FeatureCatalog.Create(new AudioService(), settings, _input, _capture,
-            new WindowsInputAutomation(), autoSettings, new WpfPictureInPicturePresenter(Dispatcher)));
+        var biteSettings = new RF4Overlay.Features.BiteAlarm.BiteAlarmSettings { Current = saved.EffectiveBiteAlarm };
+        var voiceSettings = new VoiceAnnouncementSettings { Current = saved.EffectiveVoiceAnnouncement };
+        var leftClickSettings = new LeftClickHoldSettings { WithShift = saved.ShiftLeftClickHold };
+        _announcements = new(voiceSettings);
+        var inputAutomation = new WindowsInputAutomation();
+        var foreground = new Rf4ForegroundGate();
+        _runtime = new(FeatureCatalog.Create(
+            new AudioService(),
+            settings,
+            _input,
+            _capture,
+            inputAutomation,
+            autoSettings,
+            new WpfPictureInPicturePresenter(Dispatcher),
+            _input,
+            inputAutomation,
+            leftClickSettings,
+            foreground,
+            biteSettings), _announcements);
         _hotkeys = new(_input, _runtime);
-        _viewModel = new(_runtime, settings, autoSettings, saved.Hotkeys,
-            bindings => _hotkeys.SetBindings(bindings), PersistSettings);
+        _viewModel = new(_runtime, settings, autoSettings, biteSettings, voiceSettings, leftClickSettings, saved.Hotkeys,
+            bindings => _hotkeys.SetBindings(bindings), PersistSettings, new AudioService());
         DataContext = _viewModel;
         _store.SaveFailed += (_, message) => Dispatcher.BeginInvoke(() => _viewModel.Notice = "설정 저장 실패: " + message);
         _capture.StatusChanged += (_, status) => Dispatcher.BeginInvoke(() =>
             _viewModel.ConnectionStatus = status.Message + (status.FrameCount > 0 ? $" · {status.Width}×{status.Height} · {status.FrameCount} frames" : ""));
-        _viewModel.Notice = warning ?? "단축키를 누르면 게임에도 같은 키가 전달됩니다.";
+        _viewModel.Notice = warning ?? "";
         _hotkeys.Error += (_, message) => Dispatcher.BeginInvoke(() => _viewModel.Notice = message);
         _viewModel.RecordingChanged += (_, _) => _hotkeys.Suspended = _viewModel.IsRecording;
         Loaded += OnLoaded;
@@ -74,6 +93,13 @@ public partial class MainWindow : Window
         };
         PreviewKeyDown += (_, e) =>
         {
+            if (_viewModel.IsRecording && e.Key == Key.Escape)
+            {
+                _viewModel.CancelRecording();
+                _viewModel.Notice = "단축키 기록을 취소했습니다.";
+                e.Handled = true;
+                return;
+            }
             if (!_viewModel.IsRecording || e.IsRepeat) return;
             var key = e.Key == Key.System ? e.SystemKey : e.Key;
             var vk = (byte)KeyInterop.VirtualKeyFromKey(key);
@@ -141,6 +167,7 @@ public partial class MainWindow : Window
             _tray?.Dispose();
             await _hotkeys.DisposeAsync();
             await _runtime.DisposeAsync();
+            _announcements.Dispose();
             await _input.DisposeAsync();
             await _capture.DisposeAsync();
             await _store.DisposeAsync();

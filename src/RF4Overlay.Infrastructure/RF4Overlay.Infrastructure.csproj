@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\RF4Overlay.Core\RF4Overlay.Core.csproj" />
@@ -14,4 +14,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Audio\Sounds\*.wav" />
+  </ItemGroup>
 </Project>

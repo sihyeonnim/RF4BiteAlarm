@@ -23,6 +23,28 @@ public sealed class FeatureCommandTests
     }
 
     [Fact]
+    public async Task AnnouncesOnlySuccessfulStateChanges()
+    {
+        var feature = new TestFeature();
+        var announcements = new FakeAnnouncement();
+        await using var runtime = new FeatureCommandDispatcher([feature], announcements);
+
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start));
+        await feature.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Start));
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Stop));
+        await runtime.ExecuteAsync(new(FeatureId.Metronome, FeatureAction.Stop));
+
+        Assert.Equal([(FeatureId.Metronome, true), (FeatureId.Metronome, false)], announcements.Items);
+    }
+
+    private sealed class FakeAnnouncement : IFeatureAnnouncement
+    {
+        public List<(FeatureId Feature, bool Running)> Items { get; } = [];
+        public void Announce(FeatureId feature, bool running) => Items.Add((feature, running));
+    }
+
+    [Fact]
     public async Task ShutdownRejectsNewCommandsAndWaitsForCleanup()
     {
         var feature = new TestFeature();
@@ -65,8 +87,14 @@ public sealed class FeatureCommandTests
         await using var empty = new FeatureCommandDispatcher([]);
         Assert.False((await empty.ExecuteAsync(new(FeatureId.BiteAlarm, FeatureAction.Start))).Succeeded);
         await using var planned = new FeatureCommandDispatcher(FeatureCatalog.Create(new MetronomeTests.FakeAudio(), new()));
-        Assert.Equal(3, planned.GetStatuses().Count(status => status.State == FeatureState.Unavailable));
-        Assert.False((await planned.ExecuteAsync(new(FeatureId.BiteAlarm, FeatureAction.Start))).Succeeded);
+        var statuses = planned.GetStatuses();
+        Assert.Equal(Enum.GetValues<FeatureId>().Order(), statuses.Select(status => status.Id).Order());
+        Assert.Equal(FeatureState.Stopped, Assert.Single(statuses, status => status.Id == FeatureId.Metronome).State);
+        foreach (var status in statuses.Where(status => status.Id != FeatureId.Metronome))
+        {
+            Assert.Equal(FeatureState.Unavailable, status.State);
+            Assert.False((await planned.ExecuteAsync(new(status.Id, FeatureAction.Start))).Succeeded);
+        }
         Assert.Throws<ArgumentException>(() => new FeatureCommandDispatcher([new TestFeature(), new TestFeature()]));
     }
 

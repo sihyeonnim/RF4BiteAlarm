@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using RF4Overlay.Core.Audio;
 using RF4Overlay.Core.Capture;
@@ -62,6 +62,21 @@ public sealed class BiteAlarmTests
     }
 
     [Fact]
+    public void InputWhileUiIsTemporarilyHiddenPreventsDuplicateAlarm()
+    {
+        var state = Machine();
+        state.Start();
+        Assert.True(state.Observe(BiteObservation.Present, Seconds(0)));
+        Assert.True(state.Acknowledge());
+
+        state.Observe(BiteObservation.Absent, Seconds(1));
+        Assert.False(state.Acknowledge()); // e.g. Shift+Tab closes the Steam overlay.
+        state.Observe(BiteObservation.Absent, Seconds(1.6));
+        Assert.False(state.Observe(BiteObservation.Present, Seconds(1.7)));
+        Assert.Equal(BiteState.WaitingForDisappearance, state.State);
+    }
+
+    [Fact]
     public async Task SessionRepeatsThenAcknowledgesAndCancellationUnsubscribes()
     {
         var source = new FakeInput();
@@ -73,6 +88,7 @@ public sealed class BiteAlarmTests
         frames.Writer.TryWrite(new(1, 1, 4, new byte[4]));
         await audio.Twice.Task.WaitAsync(Seconds(5));
         source.Acknowledge();
+        Assert.Equal(0, audio.StopCount);
         var count = audio.Count;
         frames.Writer.TryWrite(new(1, 1, 4, new byte[4]));
         await Task.Delay(120);
@@ -80,7 +96,7 @@ public sealed class BiteAlarmTests
         await cts.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
         Assert.Equal(0, source.Subscribers);
-        Assert.True(audio.Disposed);
+        Assert.True(audio.Disposed); Assert.Equal(1, audio.StopCount);
         source.Acknowledge();
         Assert.Equal(count, audio.Count);
     }
@@ -92,7 +108,7 @@ public sealed class BiteAlarmTests
         var input = new FakeInput();
         var session = new BiteAlarmSession(audio, input, new(Seconds(1), Seconds(0.5)));
         await Assert.ThrowsAsync<IOException>(() => session.RunAsync(FailingFrames(), new PresentDetector(), CancellationToken.None));
-        Assert.True(audio.Disposed); Assert.Equal(0, input.Subscribers);
+        Assert.True(audio.Disposed); Assert.Equal(1, audio.StopCount); Assert.Equal(0, input.Subscribers);
     }
 
     [Fact]
@@ -128,11 +144,11 @@ public sealed class BiteAlarmTests
     }
     private sealed class AlarmAudio : IAudioService, IAudioVoice
     {
-        public int Count; public bool Disposed;
+        public int Count; public int StopCount; public bool Disposed;
         public TaskCompletionSource Twice { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public IAudioVoice CreateVoice() => this;
         public void Play(SoundCue cue, float volume) { if (Interlocked.Increment(ref Count) >= 2) Twice.TrySetResult(); }
-        public void Stop() { }
+        public void Stop() { Interlocked.Increment(ref StopCount); }
         public void Dispose() => Disposed = true;
     }
 }

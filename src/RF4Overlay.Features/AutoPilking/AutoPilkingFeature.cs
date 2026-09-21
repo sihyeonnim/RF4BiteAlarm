@@ -11,8 +11,8 @@ public sealed class AutoPilkingSettings
     public const double MaximumSeconds = 60;
     private readonly object _gate = new();
     private AutomationInput _input = AutomationInput.MouseRight;
-    private double _holdSeconds = 3;
-    private double _releaseSeconds = 3;
+    private double _holdSeconds = 1;
+    private double _releaseSeconds = 3.5;
 
     public AutomationInput Input { get { lock (_gate) return _input; } set { value.Validate(); lock (_gate) _input = value; } }
     public double HoldSeconds { get { lock (_gate) return _holdSeconds; } set { ValidateSeconds(value); lock (_gate) _holdSeconds = value; } }
@@ -28,8 +28,13 @@ public sealed class AutoPilkingSettings
     }
 }
 
-public sealed class AutoPilkingFeature(IInputAutomation automation, AutoPilkingSettings settings) : IFeature
+public sealed class AutoPilkingFeature(
+    IInputAutomation automation,
+    AutoPilkingSettings settings,
+    IGameForegroundGate foreground) : IFeature
 {
+    private const double HoldRandomizationSeconds = 0.5;
+
     public FeatureStatus InitialStatus { get; } = new(FeatureId.AutoPilking, "Auto Pilking", FeatureState.Stopped,
         "선택한 입력을 설정한 누름/해제 주기로 반복합니다.");
 
@@ -38,9 +43,38 @@ public sealed class AutoPilkingFeature(IInputAutomation automation, AutoPilkingS
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            await foreground.WaitUntilForegroundAsync(cancellationToken).ConfigureAwait(false);
+
+            using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            using var focusCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var operation = RunCycleAsync(operationCancellation.Token);
+            var focusLost = foreground.WaitUntilBackgroundAsync(focusCancellation.Token);
+            var completed = await Task.WhenAny(operation, focusLost).ConfigureAwait(false);
+            if (completed == focusLost)
+            {
+                operationCancellation.Cancel();
+                try { await operation.ConfigureAwait(false); }
+                catch (OperationCanceledException) when (operationCancellation.IsCancellationRequested) { }
+            }
+            else
+            {
+                focusCancellation.Cancel();
+                await operation.ConfigureAwait(false);
+                try { await focusLost.ConfigureAwait(false); }
+                catch (OperationCanceledException) when (focusCancellation.IsCancellationRequested) { }
+            }
+        }
+
+        async Task RunCycleAsync(CancellationToken operationToken)
+        {
             var cycle = settings.Snapshot();
-            await automation.HoldAsync(cycle.Input, cycle.HoldDuration, cancellationToken).ConfigureAwait(false);
-            await Task.Delay(cycle.ReleaseDuration, cancellationToken).ConfigureAwait(false);
+            var randomizedHoldSeconds = Math.Clamp(
+                cycle.HoldDuration.TotalSeconds + (Random.Shared.NextDouble() * 2 - 1) * HoldRandomizationSeconds,
+                AutoPilkingSettings.MinimumSeconds,
+                AutoPilkingSettings.MaximumSeconds);
+            await automation.HoldAsync(cycle.Input, TimeSpan.FromSeconds(randomizedHoldSeconds), operationToken)
+                .ConfigureAwait(false);
+            await Task.Delay(cycle.ReleaseDuration, operationToken).ConfigureAwait(false);
         }
     }
 }

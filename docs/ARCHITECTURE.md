@@ -1,4 +1,4 @@
-﻿# RF4 Overlay 구조
+# RF4 Overlay 구조
 
 ## 프로젝트 경계
 
@@ -116,7 +116,7 @@ IBiteDetector와 BiteAlarmSession은 영상 판정과 알람 상태를 분리한
 상태: Inactive → Monitoring → Alerting → WaitingForDisappearance → Monitoring.
 
 - Present 최초 감지 즉시 1회, 이후 설정 간격 반복.
-- 사용자 활동 확인 시 반복/현재 소리 중단.
+- 사용자 활동 확인 시 다음 반복부터 중단하며 현재 소리는 끝까지 재생. 기능 정지/앱 종료 시에는 즉시 정리.
 - UI 소멸만으로 사용자가 확인한 것으로 취급하지 않음.
 - 확인 후 같은 UI가 남아 있으면 새 입질로 처리하지 않음.
 - 연속된 안정적 Absent 뒤에만 재무장. Present/CaptureFailed는 소멸 확인 근거를 초기화.
@@ -127,26 +127,74 @@ FishCaughtIconDetector는 제공된 1920×1080 자료의 normalized ROI
 `(left 0.2750, top 0.9269, width 0.0229, height 0.0407)`만 읽는다.
 전체 화면, 액션 문구, 게이지 및 배경은 비교하지 않는다. 기준 해상도 좌표계에서 아이콘 중심과
 흰색 무채색 픽셀을 계산하고, 원형 띠 전체 비율·네 사분면의 최소 비율·원 내부 물고기 형태의
-비율이 모두 기준을 넘을 때 후보로 판정한다. 하나의 이미지 템플릿과 픽셀별 동일 비교는 사용하지 않는다.
+비율이 모두 기준을 넘으면서 원 바깥 배경의 흰색 비율이 상한 이하여야 후보로 판정한다.
+따라서 ROI 전체가 갑자기 밝아진 프레임은 아이콘으로 인정하지 않는다. 하나의 이미지 템플릿과
+픽셀별 동일 비교는 사용하지 않는다.
+
+원형 경계도 추가 확인한다. 중심에서 16방향을 샘플링하여 반경 12–16의 가장 밝은 점이
+안쪽 반경 9–10 및 바깥 반경 19–20보다 모두 25 이상 밝은 방향이 최소 12개여야 한다.
+원 내부가 채워진 밝은 면/문구와 얇은 원형 테두리를 구분하며, 상대 대비로 기존 어두운 아이콘을
+보존한다. 모든 반경은 1920×1080 기준이며 기존 normalized ROI 안에서만 샘플링한다.
 
 기본 3개 연속 프레임이 후보일 때만 Present를 출력하며 중간 Absent/CaptureFailed는 누적을 초기화한다.
-제품의 임시 반복 간격은 5초, 소멸 확인은 0.5초이다. 이후 UI 설정으로 노출한다.
+사용자가 알람을 확인한 뒤 들어오는 입력은 소멸 확인을 초기화한다. Steam 오버레이처럼 입력으로
+닫는 화면이 잠깐 아이콘을 가려도 같은 아이콘이 다시 알람을 일으키지 않는다. 제품의 임시 반복
+간격은 5초, 소멸 확인은 2초이다. 이후 UI 설정으로 노출한다.
 제공된 POSITIVE 1장과 NEGATIVE 4장의 지정 ROI crop만 WindowsTests 자산으로 보관한다.
 테스트는 crop을 1920×1080의 원래 위치에 배치하고 1280×720/2560×1440 변환도 회귀 검증한다.
 
 ## Auto Pilking
 
-AutoPilkingFeature는 각 주기 시작 시 thread-safe 설정 snapshot을 읽고 `IInputAutomation.HoldAsync`로
-입력을 누른 뒤 release 시간만큼 기다린다. 기본값은 우클릭, 3.0초 누름/3.0초 해제다.
+AutoPilkingFeature는 각 주기 시작 시 thread-safe 설정 snapshot을 읽고 설정한 누름 시간에
+±0.5초 난수를 적용한 뒤 `IInputAutomation.HoldAsync`로 입력을 누르고 release 시간만큼 기다린다.
+난수가 적용된 누름 시간은 허용 범위 0.1–60초로 제한한다. 기본값은 우클릭, 1.0초 누름/3.5초 해제다.
+이전 설정 형식에서 우클릭 3.0/3.0인 기존 기본값만 새 기본값으로 한 번 이관하고 사용자 지정 값은 유지한다.
 keyboard 선택지는 modifier 조합이나 sequence가 아닌 단일 키만 허용한다. UI의 위/아래 버튼은
 0.1초씩 조절하며 유효 범위는 0.1–60초다. UI, Tray, Hotkey는 다른 Feature와 동일하게
-FeatureCommandDispatcher를 사용한다. 고정 주기만 제공하며 무작위화, 탐지 회피, 은폐 기능은 없다.
+FeatureCommandDispatcher를 사용한다. 해제 시간은 고정이며 탐지 회피나 은폐 기능은 없다.
+
+IGameForegroundGate는 native RF4 프로세스(rf4_x64/rf4/RussianFishing4)가 Windows 전면 창인지
+100ms 간격으로 확인한다. Auto Pilking은 RF4가 전면일 때만 한 주기를 시작하고, 주기 도중 포커스를
+잃으면 연결된 cancellation token으로 현재 입력을 즉시 해제한다. Double Click to Holding은 RF4 밖의
+더블클릭을 무시하며 유지 중 포커스를 잃으면 좌클릭과 선택된 Shift를 즉시 해제한다. 두 Feature의
+runtime 상태는 Running으로 유지되므로 RF4 복귀 후 자동으로 다시 입력을 받을 수 있다.
 
 WindowsInputAutomation은 `SendInput`으로 right-button/key down을 보낸 뒤 대기하며, 정상 완료와 취소
 모두 `finally`에서 대응하는 up을 보낸다. 입력 관찰 hook은 Windows injected flag를 확인하므로 이 입력을
 사용자 활동이나 전역 단축키로 다시 처리하지 않는다.
 
-운영정책 확인일: 2026-09-19. [RF4 Terms of Use](https://store.steampowered.com/eula/766570_eula_0)는
+운영정책 확인일: 2026-09-21. [RF4 Terms of Use](https://store.steampowered.com/eula/766570_eula_0)는
 게임상 이득을 위한 bot/cheating program 사용을 금지하고, [공식 2019 공지](https://store.steampowered.com/news/posts/?appids=766570HELP&enddate=1560531147)는
 bot, cheat software, macro를 제재 대상으로 열거한다. 사용자는 이 실험에 별도 허락을 받았다고 명시했다.
 구현 범위는 그 진술을 전제로 한 로컬 고정 입력 반복이며, 프로그램은 허락의 범위를 검증하지 않는다.
+
+## 2026-09-21 기능별 설정 UI 및 알람 소리
+
+Metronome, Auto Pilking, Bite Alarm, Double Click to Holding 행의 톱니바퀴 ToggleButton이 각 설정 패널을 펼친다.
+기본 상태는 접힘이며, 설정은 기존 MainViewModel에 바인딩한다.
+화면은 밝은 회색의 compact 행과 구분선을 사용한다. 기능 순서는 Bite Alarm, Auto Pilking,
+Double Click to Holding, RF4 PIP, Metronome이다. 설명문, 캡처/입력 상태, 진단 저장, 키 사이 제한은
+기능을 제거하지 않고 메인 UI에서 숨긴다. 단축키 기록은 각 행의 키보드 아이콘으로 연다.
+BiteAlarmSetting은 기본 Alarm 파형(Default), 4개 내장 WAV 선택과 독립 음량을 저장한다.
+이전 설정 파일은 Default/70%로 이관한다. BiteAlarmSettings의 불변 snapshot을 다음 알람에서 읽는다.
+WAV는 Infrastructure의 embedded resource로 배포하고 NAudio로 44.1kHz mono float로 변환한다.
+긴 소리가 재생 중이면 반복 trigger를 건너뛰어 재생 도중 처음부터 다시 시작하지 않는다.
+
+추가 소리 표시 이름은 알람 1–4이며 기존 SoundCue 저장 값은 유지한다.
+설정의 Test 명령은 별도 audio voice로 선택한 소리/음량을 한 번 재생한다.
+재클릭 시 이전 preview를 정지하며 ViewModel.Dispose에서 preview voice를 해제한다.
+
+## 기능 상태 음성 안내
+
+FeatureCommandDispatcher는 선택적인 IFeatureAnnouncement를 받아 실제 Running/Stopped 상태 전환에만 알린다.
+따라서 UI, Tray, 단축키에서 같은 동작을 보장하고 중복 시작·정지 또는 실패 명령은 읽지 않는다.
+PIP 창 X처럼 기능 수명이 자체 종료되는 경우도 중지 안내를 재생한다.
+Infrastructure의 FeatureAnnouncementService는 Windows SAPI 영어 음성을 전용 STA thread의 queue에서
+순차 재생한다. 기능 실행 thread를 막지 않으며 종료 시 queue와 COM voice를 정리한다.
+SAPI의 Language 409(en-US) voice를 우선 선택하고, 설치되어 있지 않으면 시스템 기본 voice를 사용한다.
+VoiceAnnouncementSettings는 ON/OFF와 0–100 정수 음량의 불변 snapshot을 제공한다.
+기본 표시값과 이전 33% 설정의 이관값은 ON·50%이며 UI 변경은 settings.json에 저장된다.
+표시 50%는 이전 SAPI 33과 같은 출력이다. 0→0, 50→33, 100→100의 구간별 선형 변환을 적용해
+기존 기본 음량을 유지하면서 전체 0–100 출력 범위를 제공한다. 서비스는 enqueue 시와 재생 직전에
+Enabled를 확인하고, 각 Speak 직전에 변환된 현재 Volume을 적용한다.
+앱 전체 종료가 내부적으로 기능을 정리할 때는 여러 음성이 연속되지 않도록 안내하지 않는다.

@@ -1,6 +1,118 @@
-﻿# 현재 구현 상태
+# 현재 구현 상태
 
-최종 갱신: 2026-09-19 (Asia/Seoul)
+최종 갱신: 2026-09-21 (Asia/Seoul)
+
+## 2026-09-21 포획 아이콘 원형 경계 검증 강화
+
+- 새 보트 오작동 화면과 실제 포획 전체 화면에서 감지 위치의 44×44 ROI만 테스트 자료로 추가.
+  전체 화면의 채팅/개인 내용은 테스트 자산에 포함하지 않음.
+- 흰 픽셀 비율 조건에 원형 경계 조건 추가: 16방향 중 12방향 이상에서 원 둘레가 안팎보다
+  25 이상 밝아야 함. 밝기 절대값만 높이지 않아 기존 어두운 포획 아이콘도 유지.
+- 기존/새 포획 ROI는 16/16, 보트 문구 ROI는 2/16 방향 통과. 제공된 보트 정지 화면은 기존
+  외곽 흰색 상한으로도 거부되므로, 오작동 순간의 정확한 원인이 이 한 장으로 재현됐다고 보지는 않음.
+  새 조건은 문구/밝은 면이 원형 픽셀 비율을 통과하는 경우를 추가로 차단함.
+- 기존 음영 포획/새 수면 포획 검출, 5개 음성 샘플 거부, 1280×720/2560×1440 배율,
+  원본 보트 크기 1919×1079의 30프레임 반복 거부, 밝은 원판 거부 회귀 테스트 통과.
+- 빌드 경고/오류 0. 순수 47개 + Windows 20개 통과. 기존 활성 창 의존 SendInput 테스트 1개는 제외.
+- 실행 파일: `.artifacts/bite-ring/bin/RF4Overlay.App/debug/Betterscreen.exe`.
+- 다음 확인: 실제 RF4에서 다양한 조명/배경의 포획과 비포획 장면을 검증. 강화된 경계 조건은
+  아이콘이 흐리거나 일부 가려진 상태에서는 감지를 보류할 수 있음. 유효한 Git HEAD가 없어 커밋 불가.
+
+## 2026-09-21 compact UI 및 RF4 전면 창 제한
+
+- 승인된 밝은 회색 compact UI를 실제 WPF 화면에 적용. 설명/진단/상태/키 사이 제한은 UI에서 숨기고
+  기능 행, 설정 톱니바퀴, 단축키 아이콘, 시작 버튼 중심으로 정리.
+- 기능 순서: Bite Alarm → Auto Pilking → Double Click to Holding → RF4 PIP → Metronome.
+- Bite Alarm 소리/음량/Test, Auto Pilking 전체 키 목록과 누름/떼기, Double Click의 Shift,
+  Metronome 주기/BPM 단일 선택과 음량을 접이식 설정으로 제공.
+- 음성 안내를 종료 버튼 바로 왼쪽에 배치하고 표시 기본값을 50%로 변경. 표시 50%를 기존 SAPI 33과
+  같은 출력으로 변환하며, 기존 ON·33 설정 파일은 ON·50으로 한 번 이관.
+- Auto Pilking 기본값을 우클릭 1.0초 누름/3.5초 떼기로 변경. 이전 버전의 기본 3.0/3.0 설정은
+  1.0/3.5로 한 번 이관하고, 다른 사용자 지정 값은 유지.
+- Auto Pilking과 Double Click to Holding은 native RF4가 전면 창일 때만 입력. 다른 앱으로 전환하면
+  Running 상태는 유지하면서 현재 입력을 해제하고 대기하며, RF4 복귀 후 자동 재개.
+- RF4 공식 이용약관을 2026-09-21 재확인. 탐지 회피나 은폐는 추가하지 않음.
+- 검증: 별도 산출물 빌드 경고/오류 0, 순수 테스트 47개 통과. Windows 테스트 17개 통과,
+  음량 50→33 회귀 테스트 통과. 기존 SendInput 활성 창 테스트 1개는 잠금 해제 데스크톱 조건 불충족으로 실패.
+- 실제 새 실행 파일 UI Automation: 기능 순서, 음성 안내 50%, 종료 버튼 정상 동작 확인.
+- 실행 파일: `.artifacts/compact-focus/bin/RF4Overlay.App/debug/Betterscreen.exe`.
+
+## 2026-09-21 음성 안내 ON/OFF 및 음량
+
+- 기능 시작·중지 영어 음성 안내의 기본 음량을 33%로 낮춤.
+- 메인 화면에 음성 안내 ON/OFF 체크박스와 0–100% 음량 슬라이더 추가.
+- 기본값 및 기존 설정 이관값은 ON·33%. 변경값은 settings.json에 저장·복원.
+- OFF 상태에서는 새 안내와 이미 queue에 대기 중인 안내를 모두 건너뛰고 슬라이더를 비활성화.
+- 실행 중 음량 변경은 다음 안내부터 즉시 적용.
+- `.artifacts/voice-controls` 빌드: 경고/오류 0. 순수 테스트 43개, Windows 테스트 16개 통과.
+  기존 SendInput 테스트 1개는 테스트 창 활성화 환경 문제로 제외.
+- 실제 UI에서 ON·33%, OFF 시 슬라이더 비활성화, ON 복원과 설정 저장 확인.
+- 실행 파일: `.artifacts/voice-controls/bin/RF4Overlay.App/debug/Betterscreen.exe`.
+- 현재 폴더는 Git 저장소가 아니므로 커밋 불가.
+
+## 2026-09-21 기능 시작·중지 영어 음성 안내
+
+- UI, Tray, 단축키가 공유하는 FeatureCommandDispatcher에 상태 변경 음성 알림을 연결.
+- 실제 Running/Stopped 전환에만 Starting/Stopping 영어 문장을 한 번 재생하며 중복 시작·정지는 제외.
+  PIP 창 X처럼 기능이 자체 종료되는 경로도 중지 안내 대상.
+- Bite Alarm, Metronome, Auto Pilking, Picture in Picture, Left-click Hold에 자연스러운 영어 이름 적용.
+- Windows SAPI 음성을 전용 STA worker에서 순서대로 재생하여 기능 명령과 UI thread를 막지 않음.
+- Windows에 설치된 en-US 음성(Language 409)을 우선 선택하여 한국어 기본 음성 설정에서도 영어로 안내.
+- 앱 종료 시 worker와 COM voice를 정리하며, 앱 종료에 따른 일괄 정지는 별도 음성으로 읽지 않음.
+- `.artifacts/feature-voice-english` 빌드: 경고/오류 0. 순수 테스트 42개 및 Windows 테스트 16개 통과.
+  기존 SendInput 테스트 1개는 테스트 창 활성화 실패로 통과하지 못함.
+- 실제 수정본에서 Metronome 시작/정지와 UI 상태 전환 확인.
+- 실행 파일: `.artifacts/feature-voice-english/bin/RF4Overlay.App/debug/Betterscreen.exe`.
+- Microsoft Zira(en-US)로 10개 시작·중지 문장을 합친 `feature-announcements-preview.wav` 생성.
+- 현재 폴더는 Git 저장소가 아니므로 커밋 불가.
+
+## 2026-09-21 알람 이름 및 Test 버튼
+
+- Default 유지, 추가 소리 이름을 순서대로 알람 1–4로 변경. 저장된 소리 ID와 매핑은 유지.
+- Bite Alarm 설정에 Test 버튼 추가: 현재 선택한 소리/음량으로 한 번 재생.
+  별도 preview voice를 사용하고 재클릭 시 이전 preview를 정지한 뒤 재생하며 앱 종료 시 해제.
+- `.artifacts/alarm-test` 빌드: 경고/오류 0. 테스트: 52개 통과, 기존 Windows 입력 창 활성화 테스트 1개 실패.
+- 실행 파일: `.artifacts/alarm-test/bin/RF4Overlay.App/debug/Betterscreen.exe`.
+- 다음 확인: 실제 UI에서 선택별 Test 청취. Git 저장소가 아니므로 커밋 불가.
+
+## 2026-09-21 설정 UI 및 Bite Alarm 소리 변경
+
+- Metronome/Auto Pilking/Bite Alarm 카드별 톱니바퀴 설정 펼침·접힘 추가. 초기 상태는 접힘.
+- Bite Alarm: Default(기존 소리), sound8, sound0, sound9, 체결수신1 및 별도 음량 저장/복원.
+- 제공된 WAV 4개를 embedded resource로 포함하여 Downloads 경로 없이 배포 가능.
+- 입력 확인 시 재생 중인 소리는 유지하고 다음 반복만 취소. 명시적 정지/종료 정리는 유지.
+- 긴 소리의 반복 trigger가 현재 재생을 끊지 않도록 보호.
+- 별도 출력 `.artifacts/ui-settings`에서 build 성공(경고/오류 0).
+- 최종 test: 순수 로직 41개 통과, Windows 11개 통과/1개 실패.
+  실패는 기존 SendInput 테스트 창 활성화 실패이며 이번 소리 디코딩/재생 테스트는 통과.
+- 실제 수정본 실행: 초기 접힘, 3개 톱니바퀴, Bite Alarm 설정 펼침과 음량 70% 확인.
+- 기존 실행 앱이 기본 출력 DLL을 잠그므로 수정 실행 파일은
+  `.artifacts/ui-settings/bin/RF4Overlay.App/debug/Betterscreen.exe`에 생성.
+- 현재 폴더는 Git 저장소가 아니므로 커밋하지 못함.
+- 다음 확인: 실제 포획 시 5개 소리 청취 및 입력 이후 현재 소리 완료/다음 반복 중단.
+
+## 2026-09-21 테스트 오류 수정 및 검증
+
+- Bite Alarm 검출에 원 바깥 배경의 흰색 비율 상한을 추가하여 ROI 백색 급증 오검출을 차단.
+- 알람 확인 이후의 사용자 입력이 UI 소멸 판정을 초기화하도록 하여 Steam 오버레이를
+  닫은 뒤 같은 물고기 UI가 중복 알람을 일으키는 경로를 차단. 제품 소멸 확인 시간도
+  0.5초에서 2초로 늘려 오버레이 닫힘 애니메이션과 프레임 지연을 흡수.
+- Auto Pilking 누름 시간에 매 사이클 ±0.5초 난수를 적용하고 결과를 0.1–60초로 제한.
+- `UnknownAndUnavailableCommandsFail`: LeftClickHold 추가 후 오래된 사용 불가 개수(3) 검증을
+  전체 FeatureId 등록, Metronome 준비 상태, 나머지 각 기능의 Unavailable/시작 거절 검증으로 교체.
+- `SendInputHoldsAndReleasesRightMouseAndSingleKey`: WPF 초기 작업 완료 후 활성화/포커스와
+  mouse capture를 확인하여 포인터 이동에 따른 입력 누락을 방지. 실패 경로에서도 hold 취소와
+  button-up 완료를 기다린 뒤 capture/커서/창을 정리한다.
+- `dotnet build --no-restore`: 성공, 경고 0 / 오류 0.
+- `dotnet test --no-restore`: 순수 로직 35개 통과, Windows 통합 9개 통과 / 2개 실패.
+  현재 Codex 제한 실행 환경에서 GetCursorPos가 실패하고 WGC 서비스 접근이 실패했다.
+  Windows 입력 테스트 수정의 실제 데스크톱 검증은 아직 완료하지 못했다.
+- Bite Alarm 수정 후 검증: 순수 로직 36개 통과, detector 대상 Windows 테스트 5개 통과.
+  실행 중인 Betterscreen 프로세스가 App 출력 DLL을 점유하여 전체 솔루션 재빌드는 생략했다.
+- 일반 `dotnet build`의 패키지 복원은 사용자 NuGet.Config 읽기 권한 제한으로 실패하여
+  기존 복원 결과를 사용했다. 아래 46개 통과 기록은 이전 환경의 검증 이력이다.
+- 다음 작업: 잠금 해제된 일반 Windows 데스크톱에서 전체 테스트를 실행하여
+  우클릭 취소 해제/F24 down-up 및 WGC 통합 테스트를 확인.
 
 ## 완료
 
@@ -24,7 +136,7 @@
   기본 3개 연속 프레임 판정, 공용 WGC 프레임 구독, 반복 알람 세션과 Feature runtime 연결.
   사용자 입력 확인, 안정적 UI 소멸 후 재무장, 구독/오디오/취소 정리.
 - Auto Pilking: 기본 우클릭 또는 단일 keyboard key를 0.1–60초 범위의 누름/해제 시간으로 반복.
-  기본값은 3.0초 누름/3.0초 해제이며 UI spinner는 0.1초 단위로 조절한다.
+  기본값은 1.0초 누름/3.5초 해제이며 UI spinner는 0.1초 단위로 조절한다.
   중지/종료가 누름 중 발생해도 `SendInput` key/button-up을 `finally`에서 전송하고,
   injected 입력은 기존 사용자 활동/Hotkey 관찰에서 제외한다.
 - RF4 PIP: 기존 CaptureMonitor 프레임을 재사용하는 480×300 항상 위 WPF 창.
@@ -93,7 +205,7 @@
 
 - 기본 자동 연결 대상 이름: rf4_x64 / rf4 / RussianFishing4. 실제 설치에서 확인 필요.
 - 원격 Steam 스트리밍은 제목이 실제 게임을 증명하지 않아 자동 연결하지 않는다.
-- Bite Alarm의 반복 간격/음량/연속 프레임 수는 아직 제품 설정 UI에 노출되지 않음.
+- Bite Alarm의 반복 간격/연속 프레임 수는 아직 제품 설정 UI에 노출되지 않음. 소리 종류/음량은 설정 가능.
 - POSITIVE 표본이 1장이므로 다른 환경의 실제 포획 UI에서 threshold 보정 가능성이 있음.
 - Auto Pilking 공식 일반 정책은 bot/macro를 금지한다. 이 빌드의 실제 게임 사용 근거는
   사용자가 밝힌 별도 허락이며 그 허락의 적용 범위는 프로그램이 독립적으로 검증하지 못한다.

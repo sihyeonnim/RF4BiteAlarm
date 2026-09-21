@@ -29,11 +29,12 @@ public sealed class LeftClickHoldFeature(
     IMouseInputSource input,
     ILeftButtonHoldAutomation automation,
     LeftClickHoldSettings settings,
-    LeftClickHoldOptions options) : IFeature
+    LeftClickHoldOptions options,
+    IGameForegroundGate foreground) : IFeature
 {
     public FeatureStatus InitialStatus { get; } = new(
         FeatureId.LeftClickHold,
-        "좌클릭 고정",
+        "Double Click to Holding",
         FeatureState.Stopped,
         "더블 좌클릭 후 좌클릭을 유지하고 다음 좌클릭에서 해제합니다.");
 
@@ -45,6 +46,8 @@ public sealed class LeftClickHoldFeature(
         void OnReset(object? sender, EventArgs args) => events.Writer.TryWrite(null);
         input.MouseButtonReceived += OnButton;
         input.InputReset += OnReset;
+        using var focusWatcherCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var focusWatcher = WatchFocusAsync(focusWatcherCancellation.Token);
         IAsyncDisposable? held = null;
         MouseButtonInput? firstUp = null;
         var ignoreNextUp = false;
@@ -53,6 +56,13 @@ public sealed class LeftClickHoldFeature(
             await foreach (var current in events.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
                 if (current is null)
+                {
+                    firstUp = null;
+                    ignoreNextUp = false;
+                    if (held is not null) { await held.DisposeAsync().ConfigureAwait(false); held = null; }
+                    continue;
+                }
+                if (!foreground.IsForeground)
                 {
                     firstUp = null;
                     ignoreNextUp = false;
@@ -90,6 +100,19 @@ public sealed class LeftClickHoldFeature(
             input.InputReset -= OnReset;
             events.Writer.TryComplete();
             if (held is not null) await held.DisposeAsync().ConfigureAwait(false);
+            focusWatcherCancellation.Cancel();
+            try { await focusWatcher.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (focusWatcherCancellation.IsCancellationRequested) { }
+        }
+
+        async Task WatchFocusAsync(CancellationToken watcherToken)
+        {
+            while (true)
+            {
+                await foreground.WaitUntilBackgroundAsync(watcherToken).ConfigureAwait(false);
+                events.Writer.TryWrite(null);
+                await foreground.WaitUntilForegroundAsync(watcherToken).ConfigureAwait(false);
+            }
         }
     }
 
@@ -100,4 +123,4 @@ public sealed class LeftClickHoldFeature(
 }
 
 public sealed class UnavailableLeftClickHoldFeature() : PlannedFeature(
-    FeatureId.LeftClickHold, "좌클릭 고정", "전역 마우스 입력 서비스가 필요합니다.");
+    FeatureId.LeftClickHold, "Double Click to Holding", "전역 마우스 입력 서비스가 필요합니다.");

@@ -6,14 +6,18 @@ public sealed record FishCaughtIconDetectorOptions(
     int ConsecutivePresentFrames = 3,
     double MinimumAnnulusCoverage = 0.30,
     double MinimumQuadrantCoverage = 0.25,
-    double MinimumInnerCoverage = 0.25)
+    double MinimumInnerCoverage = 0.25,
+    double MaximumOuterWhiteCoverage = 0.35,
+    double MinimumRingEdgeCoverage = 0.75)
 {
     public void Validate()
     {
         if (ConsecutivePresentFrames is < 1 or > 30 ||
             !ValidRatio(MinimumAnnulusCoverage) ||
             !ValidRatio(MinimumQuadrantCoverage) ||
-            !ValidRatio(MinimumInnerCoverage))
+            !ValidRatio(MinimumInnerCoverage) ||
+            !ValidRatio(MaximumOuterWhiteCoverage) ||
+            !ValidRatio(MinimumRingEdgeCoverage))
             throw new ArgumentException("물고기 포획 아이콘 감지 설정이 잘못되었습니다.");
     }
 
@@ -24,7 +28,9 @@ public readonly record struct FishCaughtEvidence(
     double AnnulusCoverage,
     double MinimumQuadrantCoverage,
     double InnerCoverage,
-    bool IsMatch);
+    double OuterWhiteCoverage,
+    bool IsMatch,
+    double RingEdgeCoverage = 0);
 
 /// <summary>
 /// Detects the stable white ring and inner fish glyph only inside the supplied normalized RF4 UI region.
@@ -45,6 +51,7 @@ public sealed class FishCaughtIconDetector : IBiteDetector
     private const double InnerRadius = 10;
     private const double AnnulusInnerRadius = 11;
     private const double AnnulusOuterRadius = 18;
+    private const double OuterBackgroundInnerRadius = 20;
     private readonly FishCaughtIconDetectorOptions _options;
     private int _consecutivePresent;
 
@@ -69,6 +76,8 @@ public sealed class FishCaughtIconDetector : IBiteDetector
         var annulusWhite = 0;
         var innerTotal = 0;
         var innerWhite = 0;
+        var outerTotal = 0;
+        var outerWhite = 0;
         Span<int> quadrantTotal = stackalloc int[4];
         Span<int> quadrantWhite = stackalloc int[4];
         var pixels = frame.Pixels.Span;
@@ -95,19 +104,61 @@ public sealed class FishCaughtIconDetector : IBiteDetector
                     annulusWhite++;
                     quadrantWhite[quadrant]++;
                 }
+                else if (radius >= OuterBackgroundInnerRadius)
+                {
+                    outerTotal++;
+                    if (white) outerWhite++;
+                }
             }
         }
 
         var annulusCoverage = Ratio(annulusWhite, annulusTotal);
         var innerCoverage = Ratio(innerWhite, innerTotal);
+        var outerWhiteCoverage = Ratio(outerWhite, outerTotal);
         var minimumQuadrantCoverage = 1d;
         for (var index = 0; index < 4; index++)
             minimumQuadrantCoverage = Math.Min(minimumQuadrantCoverage,
                 Ratio(quadrantWhite[index], quadrantTotal[index]));
+        var ringEdgeCoverage = MeasureRingEdges(frame, centerX, centerY);
         var match = annulusCoverage >= _options.MinimumAnnulusCoverage &&
                     minimumQuadrantCoverage >= _options.MinimumQuadrantCoverage &&
-                    innerCoverage >= _options.MinimumInnerCoverage;
-        return new(annulusCoverage, minimumQuadrantCoverage, innerCoverage, match);
+                    innerCoverage >= _options.MinimumInnerCoverage &&
+                    outerWhiteCoverage <= _options.MaximumOuterWhiteCoverage &&
+                    ringEdgeCoverage >= _options.MinimumRingEdgeCoverage;
+        return new(annulusCoverage, minimumQuadrantCoverage, innerCoverage, outerWhiteCoverage, match, ringEdgeCoverage);
+    }
+
+    // A genuine ring has a bright crest with darker pixels on BOTH sides. Text, wood and
+    // water may fill the broad annulus but do not form this edge around the whole circle.
+    // Relative contrast also preserves the dimmed icon in the supplied older screenshot.
+    private static double MeasureRingEdges(CapturedFrame frame, double centerX, double centerY)
+    {
+        const int directions = 16;
+        var matchingDirections = 0;
+        for (var index = 0; index < directions; index++)
+        {
+            var angle = index * Math.Tau / directions;
+            var dx = Math.Cos(angle) * frame.Width / ReferenceWidth;
+            var dy = Math.Sin(angle) * frame.Height / ReferenceHeight;
+            var crest = 0d;
+            for (var radius = 12; radius <= 16; radius++)
+                crest = Math.Max(crest, SampleNeutralBrightness(frame, centerX + radius * dx, centerY + radius * dy));
+            var inside = (SampleNeutralBrightness(frame, centerX + 9 * dx, centerY + 9 * dy) +
+                          SampleNeutralBrightness(frame, centerX + 10 * dx, centerY + 10 * dy)) / 2;
+            var outside = (SampleNeutralBrightness(frame, centerX + 19 * dx, centerY + 19 * dy) +
+                           SampleNeutralBrightness(frame, centerX + 20 * dx, centerY + 20 * dy)) / 2;
+            if (crest >= 120 && crest - Math.Max(inside, outside) >= 25) matchingDirections++;
+        }
+        return (double)matchingDirections / directions;
+    }
+
+    private static double SampleNeutralBrightness(CapturedFrame frame, double x, double y)
+    {
+        var column = Math.Clamp((int)Math.Floor(x), 0, frame.Width - 1);
+        var row = Math.Clamp((int)Math.Floor(y), 0, frame.Height - 1);
+        var offset = row * frame.Stride + column * 4;
+        var pixels = frame.Pixels.Span;
+        return Math.Min(pixels[offset], Math.Min(pixels[offset + 1], pixels[offset + 2]));
     }
 
     public ValueTask<BiteObservation> DetectAsync(CapturedFrame frame, CancellationToken cancellationToken)
