@@ -1,15 +1,20 @@
-# Overview
-Detect <img width="35" height="35" alt="Fish Catched" src="https://github.com/user-attachments/assets/734843b6-1aaf-474b-9a12-813ae112e4b8" />, then Ring the Alarm
-
 # RF4 Bite Alarm
-RF4Overlay에서 Bite Alarm 기능만 분리한 Windows용 WPF 애플리케이션입니다.
+
+## Overview
+
+RF4 Bite Alarm monitors Russian Fishing 4 for the fish-caught indicator <img width="35" height="35" alt="Fish caught indicator" src="https://github.com/user-attachments/assets/734843b6-1aaf-474b-9a12-813ae112e4b8" /> and plays a repeating alarm when a catch is detected.
+
+The demo below includes sound. Unmute the player to hear the alarm.
+
+https://github.com/user-attachments/assets/7bcf0aff-cc9e-4f2c-9bd7-c88d47713cec
 
 ## Features
-- 실행 중인 RF4 창 자동 탐색 및 Windows Graphics Capture
-- 포획 아이콘 3프레임 연속 감지 후 반복 알람
-- 물리 키/마우스 입력 시 알람 확인 및 다음 포획 재무장
-- 5개 알람 소리, 음량, 전역 시작/정지 단축키 설정
-- 시스템 트레이에서 시작/정지, 창 열기, 종료
+
+- Automatically locates the running RF4 window and captures it with Windows Graphics Capture.
+- Requires the fish-caught indicator to appear in three consecutive frames before triggering, reducing false alarms.
+- Repeats the selected alarm until physical keyboard or mouse input acknowledges the catch. The sound currently playing finishes naturally, and subsequent repetitions are stopped.
+- Provides five alarm sounds, one-time sound previews, adjustable volume, and a configurable global start/stop hotkey.
+- Supports starting and stopping the alarm, reopening the window, and exiting from the system tray.
 
 ## Build and Run
 
@@ -19,4 +24,4 @@ dotnet test RF4BiteAlarm.slnx
 dotnet publish src/RF4BiteAlarm/RF4BiteAlarm.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-설정 파일은 `%LOCALAPPDATA%\RF4BiteAlarm\settings.json`에 저장됩니다.
+User settings are stored in `%LOCALAPPDATA%\RF4BiteAlarm\settings.json`.
