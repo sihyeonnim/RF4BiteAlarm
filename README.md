@@ -4,8 +4,6 @@
 
 RF4 Bite Alarm monitors Russian Fishing 4 for the fish-caught indicator <img width="35" height="35" alt="Fish caught indicator" src="https://github.com/user-attachments/assets/734843b6-1aaf-474b-9a12-813ae112e4b8" /> and plays a repeating alarm when a catch is detected.
 
-The demo below includes sound. Unmute the player to hear the alarm.
-
 https://github.com/user-attachments/assets/7bcf0aff-cc9e-4f2c-9bd7-c88d47713cec
 
 ## Features
