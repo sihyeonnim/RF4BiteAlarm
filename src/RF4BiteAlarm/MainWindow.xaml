@@ -1,0 +1,66 @@
+<Window x:Class="RF4BiteAlarm.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="RF4 Bite Alarm" Width="390" Height="330" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen" Background="#F2F2F2"
+        FontFamily="Malgun Gothic" FontSize="12" Icon="Assets/RF4BiteAlarm.ico">
+    <Window.Resources>
+        <Style TargetType="GroupBox">
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Padding" Value="8,5,8,8"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="MinWidth" Value="72"/>
+            <Setter Property="Height" Value="27"/>
+            <Setter Property="Padding" Value="9,2"/>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="12,10,12,10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <GroupBox Header="Bite Alarm">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="76"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="상태" VerticalAlignment="Center"/>
+                <TextBlock x:Name="StateText" Grid.Column="1" Grid.ColumnSpan="2" Text="준비 중" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Text="알람 소리" Margin="0,7,0,0" VerticalAlignment="Center"/>
+                <ComboBox x:Name="SoundBox" Grid.Row="1" Grid.Column="1" Margin="0,7,7,0" Height="25"
+                          DisplayMemberPath="Name" SelectedValuePath="Cue" SelectionChanged="SoundChanged"/>
+                <Button Grid.Row="1" Grid.Column="2" Content="Test" Margin="0,7,0,0" Click="TestClick"/>
+                <TextBlock Grid.Row="2" Text="음량" Margin="0,7,0,0" VerticalAlignment="Center"/>
+                <Slider x:Name="VolumeSlider" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="100" Margin="0,7,7,0"
+                        ValueChanged="VolumeChanged"/>
+                <TextBlock x:Name="VolumeText" Grid.Row="2" Grid.Column="2" Width="72" Margin="0,7,0,0" VerticalAlignment="Center"/>
+            </Grid>
+        </GroupBox>
+
+        <GroupBox Grid.Row="1" Header="시작/정지 단축키">
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBox x:Name="HotkeyText" IsReadOnly="True" Height="25" Padding="4,2" VerticalContentAlignment="Center"/>
+                <Button x:Name="RecordButton" Grid.Column="1" Content="변경" Margin="7,0,0,0" Click="RecordClick"/>
+            </Grid>
+        </GroupBox>
+
+        <TextBlock x:Name="ConnectionText" Grid.Row="2" Foreground="#555555" TextWrapping="Wrap" Margin="3,0,3,7"
+                   Text="RF4 창을 찾는 중입니다."/>
+
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Button x:Name="ToggleButton" Content="시작" Width="92" Click="ToggleClick"/>
+            <Button Grid.Column="1" Content="트레이로 숨기기" Margin="7,0,0,0" Click="HideClick"/>
+            <Button Grid.Column="2" Content="종료" Margin="7,0,0,0" Click="ExitClick"/>
+        </Grid>
+    </Grid>
+</Window>

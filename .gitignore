@@ -1,12 +1,5 @@
-**/bin/
-**/obj/
-.vs/
-TestResults/
-*.user
-*.suo
-*.log
-.env
+bin/
+obj/
 artifacts/
-.artifacts/
-RF4-Bite-Alram/
-feature-announcements-preview.wav
+.vs/
+*.user

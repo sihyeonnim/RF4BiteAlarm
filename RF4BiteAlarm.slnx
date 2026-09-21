@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RF4BiteAlarm/RF4BiteAlarm.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RF4BiteAlarm.Tests/RF4BiteAlarm.Tests.csproj" />
+  </Folder>
+</Solution>
