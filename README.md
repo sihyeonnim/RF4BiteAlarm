@@ -1,6 +1,5 @@
 # Overview
-Detect Fish Catched UI, then Ring the Alarm
-<img width="35" height="35" alt="Fish Catched" src="https://github.com/user-attachments/assets/734843b6-1aaf-474b-9a12-813ae112e4b8" />
+Detect <img width="35" height="35" alt="Fish Catched" src="https://github.com/user-attachments/assets/734843b6-1aaf-474b-9a12-813ae112e4b8" />, then Ring the Alarm
 
 # RF4 Bite Alarm
 RF4Overlay에서 Bite Alarm 기능만 분리한 Windows용 WPF 애플리케이션입니다.
